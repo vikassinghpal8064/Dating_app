@@ -471,7 +471,7 @@ select throws_like(
   'a member cannot grant themselves the admin role'
 );
 
--- A member cannot even see who holds a role: user_roles is self-or-moderator, so
+-- A member cannot even see who holds a role: user_roles is administrator-only, so
 -- the count comes back empty rather than showing them the admin list. The count
 -- itself is therefore asserted from the owner side, below.
 select is(

@@ -141,7 +141,8 @@ select ok(
       and r.rolname = 'public'
       and has_function_privilege(r.oid, p.oid, 'EXECUTE')
       and p.proname = any (array[
-        'is_admin', 'is_moderator', 'get_contact_number', 'request_whatsapp',
+        'is_admin', 'is_moderator', 'get_contact_number', 'get_contact_link',
+        'is_blocked_pair', 'request_whatsapp',
         'respond_whatsapp_request', 'get_potential_matches', 'search_profiles_by_distance'
       ])
   ),
@@ -161,7 +162,8 @@ select ok(
       and r.rolname = 'anon'
       and has_function_privilege(r.oid, p.oid, 'EXECUTE')
       and p.proname = any (array[
-        'is_admin', 'is_moderator', 'get_contact_number', 'request_whatsapp',
+        'is_admin', 'is_moderator', 'get_contact_number', 'get_contact_link',
+        'is_blocked_pair', 'request_whatsapp',
         'respond_whatsapp_request', 'get_potential_matches', 'search_profiles_by_distance'
       ])
   ),
@@ -268,8 +270,8 @@ select is(
      ) as f
      join pg_proc p on p.oid = f.funcid
      join pg_namespace pn on pn.oid = p.pronamespace and pn.nspname = 'public'),
-  1::bigint,
-  'the moderator policy helper is still discoverable, so that check is not vacuous'
+  3::bigint,
+  'the policy helper functions (is_admin, is_moderator, is_blocked_pair) are still discoverable, so those checks are not vacuous'
 );
 
 -- ---------------------------------------------------------------------------

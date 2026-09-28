@@ -44,6 +44,13 @@ export type Database = {
             foreignKeyName: 'blocks_blocked_id_fkey';
             columns: ['blocked_id'];
             isOneToOne: false;
+            referencedRelation: 'likes_received';
+            referencedColumns: ['liker_id'];
+          },
+          {
+            foreignKeyName: 'blocks_blocked_id_fkey';
+            columns: ['blocked_id'];
+            isOneToOne: false;
             referencedRelation: 'profiles';
             referencedColumns: ['id'];
           },
@@ -53,6 +60,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'public_profiles';
             referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'blocks_blocker_id_fkey';
+            columns: ['blocker_id'];
+            isOneToOne: false;
+            referencedRelation: 'likes_received';
+            referencedColumns: ['liker_id'];
           },
           {
             foreignKeyName: 'blocks_blocker_id_fkey';
@@ -91,6 +105,13 @@ export type Database = {
             foreignKeyName: 'contact_approvals_owner_id_fkey';
             columns: ['owner_id'];
             isOneToOne: false;
+            referencedRelation: 'likes_received';
+            referencedColumns: ['liker_id'];
+          },
+          {
+            foreignKeyName: 'contact_approvals_owner_id_fkey';
+            columns: ['owner_id'];
+            isOneToOne: false;
             referencedRelation: 'profiles';
             referencedColumns: ['id'];
           },
@@ -105,12 +126,56 @@ export type Database = {
             foreignKeyName: 'contact_approvals_viewer_id_fkey';
             columns: ['viewer_id'];
             isOneToOne: false;
+            referencedRelation: 'likes_received';
+            referencedColumns: ['liker_id'];
+          },
+          {
+            foreignKeyName: 'contact_approvals_viewer_id_fkey';
+            columns: ['viewer_id'];
+            isOneToOne: false;
             referencedRelation: 'profiles';
             referencedColumns: ['id'];
           },
           {
             foreignKeyName: 'contact_approvals_viewer_id_fkey';
             columns: ['viewer_id'];
+            isOneToOne: false;
+            referencedRelation: 'public_profiles';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      contact_link_requests: {
+        Row: {
+          called_at: string;
+          user_id: string;
+        };
+        Insert: {
+          called_at?: string;
+          user_id: string;
+        };
+        Update: {
+          called_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'contact_link_requests_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'likes_received';
+            referencedColumns: ['liker_id'];
+          },
+          {
+            foreignKeyName: 'contact_link_requests_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'contact_link_requests_user_id_fkey';
+            columns: ['user_id'];
             isOneToOne: false;
             referencedRelation: 'public_profiles';
             referencedColumns: ['id'];
@@ -141,6 +206,13 @@ export type Database = {
             foreignKeyName: 'likes_liked_id_fkey';
             columns: ['liked_id'];
             isOneToOne: false;
+            referencedRelation: 'likes_received';
+            referencedColumns: ['liker_id'];
+          },
+          {
+            foreignKeyName: 'likes_liked_id_fkey';
+            columns: ['liked_id'];
+            isOneToOne: false;
             referencedRelation: 'profiles';
             referencedColumns: ['id'];
           },
@@ -150,6 +222,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'public_profiles';
             referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'likes_liker_id_fkey';
+            columns: ['liker_id'];
+            isOneToOne: false;
+            referencedRelation: 'likes_received';
+            referencedColumns: ['liker_id'];
           },
           {
             foreignKeyName: 'likes_liker_id_fkey';
@@ -194,6 +273,13 @@ export type Database = {
             foreignKeyName: 'matches_matched_user_id_fkey';
             columns: ['matched_user_id'];
             isOneToOne: false;
+            referencedRelation: 'likes_received';
+            referencedColumns: ['liker_id'];
+          },
+          {
+            foreignKeyName: 'matches_matched_user_id_fkey';
+            columns: ['matched_user_id'];
+            isOneToOne: false;
             referencedRelation: 'profiles';
             referencedColumns: ['id'];
           },
@@ -203,6 +289,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'public_profiles';
             referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'matches_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'likes_received';
+            referencedColumns: ['liker_id'];
           },
           {
             foreignKeyName: 'matches_user_id_fkey';
@@ -260,6 +353,13 @@ export type Database = {
             foreignKeyName: 'messages_sender_id_fkey';
             columns: ['sender_id'];
             isOneToOne: false;
+            referencedRelation: 'likes_received';
+            referencedColumns: ['liker_id'];
+          },
+          {
+            foreignKeyName: 'messages_sender_id_fkey';
+            columns: ['sender_id'];
+            isOneToOne: false;
             referencedRelation: 'profiles';
             referencedColumns: ['id'];
           },
@@ -293,6 +393,13 @@ export type Database = {
             foreignKeyName: 'passes_passed_id_fkey';
             columns: ['passed_id'];
             isOneToOne: false;
+            referencedRelation: 'likes_received';
+            referencedColumns: ['liker_id'];
+          },
+          {
+            foreignKeyName: 'passes_passed_id_fkey';
+            columns: ['passed_id'];
+            isOneToOne: false;
             referencedRelation: 'profiles';
             referencedColumns: ['id'];
           },
@@ -302,6 +409,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'public_profiles';
             referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'passes_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'likes_received';
+            referencedColumns: ['liker_id'];
           },
           {
             foreignKeyName: 'passes_user_id_fkey';
@@ -342,6 +456,13 @@ export type Database = {
           whatsapp_number?: string;
         };
         Relationships: [
+          {
+            foreignKeyName: 'private_contacts_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: true;
+            referencedRelation: 'likes_received';
+            referencedColumns: ['liker_id'];
+          },
           {
             foreignKeyName: 'private_contacts_user_id_fkey';
             columns: ['user_id'];
@@ -387,6 +508,13 @@ export type Database = {
           user_id?: string;
         };
         Relationships: [
+          {
+            foreignKeyName: 'profile_photos_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'likes_received';
+            referencedColumns: ['liker_id'];
+          },
           {
             foreignKeyName: 'profile_photos_user_id_fkey';
             columns: ['user_id'];
@@ -547,6 +675,13 @@ export type Database = {
             foreignKeyName: 'reports_reported_id_fkey';
             columns: ['reported_id'];
             isOneToOne: false;
+            referencedRelation: 'likes_received';
+            referencedColumns: ['liker_id'];
+          },
+          {
+            foreignKeyName: 'reports_reported_id_fkey';
+            columns: ['reported_id'];
+            isOneToOne: false;
             referencedRelation: 'profiles';
             referencedColumns: ['id'];
           },
@@ -556,6 +691,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'public_profiles';
             referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'reports_reporter_id_fkey';
+            columns: ['reporter_id'];
+            isOneToOne: false;
+            referencedRelation: 'likes_received';
+            referencedColumns: ['liker_id'];
           },
           {
             foreignKeyName: 'reports_reporter_id_fkey';
@@ -612,6 +754,13 @@ export type Database = {
             foreignKeyName: 'user_preferences_user_id_fkey';
             columns: ['user_id'];
             isOneToOne: true;
+            referencedRelation: 'likes_received';
+            referencedColumns: ['liker_id'];
+          },
+          {
+            foreignKeyName: 'user_preferences_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: true;
             referencedRelation: 'profiles';
             referencedColumns: ['id'];
           },
@@ -648,6 +797,13 @@ export type Database = {
             foreignKeyName: 'user_roles_granted_by_fkey';
             columns: ['granted_by'];
             isOneToOne: false;
+            referencedRelation: 'likes_received';
+            referencedColumns: ['liker_id'];
+          },
+          {
+            foreignKeyName: 'user_roles_granted_by_fkey';
+            columns: ['granted_by'];
+            isOneToOne: false;
             referencedRelation: 'profiles';
             referencedColumns: ['id'];
           },
@@ -657,6 +813,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'public_profiles';
             referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'user_roles_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'likes_received';
+            referencedColumns: ['liker_id'];
           },
           {
             foreignKeyName: 'user_roles_user_id_fkey';
@@ -704,6 +867,13 @@ export type Database = {
             foreignKeyName: 'whatsapp_consents_matched_user_id_fkey';
             columns: ['matched_user_id'];
             isOneToOne: false;
+            referencedRelation: 'likes_received';
+            referencedColumns: ['liker_id'];
+          },
+          {
+            foreignKeyName: 'whatsapp_consents_matched_user_id_fkey';
+            columns: ['matched_user_id'];
+            isOneToOne: false;
             referencedRelation: 'profiles';
             referencedColumns: ['id'];
           },
@@ -713,6 +883,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'public_profiles';
             referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'whatsapp_consents_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'likes_received';
+            referencedColumns: ['liker_id'];
           },
           {
             foreignKeyName: 'whatsapp_consents_user_id_fkey';
@@ -732,36 +909,25 @@ export type Database = {
       };
     };
     Views: {
-      /*
-       * `supabase gen types` reports every column of a view as nullable,
-       * because PostgREST cannot infer NOT NULL through a view. Left as
-       * generated, that is 11 false `| null` that the app would have to
-       * defend against at every read for no benefit.
-       *
-       * The view is hand-written and audited (migration 12), so its real
-       * contract can be stated rather than guessed, and it is narrower than
-       * the generator's:
-       *
-       *   id                 profiles.id is the primary key
-       *   full_name          coalesce(..., '')
-       *   age                calculate_age() returns 0 for a null date, never null
-       *   gender             profiles.gender is NOT NULL
-       *   interested_in      profiles.interested_in is NOT NULL
-       *   bio                profiles.bio is NOT NULL
-       *   photos             profiles.photos is NOT NULL
-       *   location_city      coalesce(..., '')
-       *   location_country   coalesce(..., '')
-       *   is_online          every branch returns a literal or compares a
-       *                      NOT NULL column
-       *   last_active        every branch returns a NOT NULL column
-       *   distance_km        NULL, and deliberately so: withheld when either
-       *                      party hides their distance, or when either is
-       *                      missing coordinates. See the view for the cases.
-       *
-       * Only distance_km is nullable here, and that is the one the UI must
-       * handle. `05_discovery.sql` asserts the twelve published columns and
-       * that no email, coordinate, birth date or flag appears among them.
-       */
+      likes_received: {
+        Row: {
+          age: number;
+          bio: string;
+          distance_km: number | null;
+          full_name: string;
+          gender: string;
+          interested_in: string[];
+          is_online: boolean;
+          last_active: string;
+          like_type: Database['public']['Enums']['like_type'];
+          liked_at: string;
+          liker_id: string;
+          location_city: string;
+          location_country: string;
+          photos: string[];
+        };
+        Relationships: [];
+      };
       public_profiles: {
         Row: {
           age: number;
@@ -786,6 +952,7 @@ export type Database = {
         Args: { lat1: number; lat2: number; lon1: number; lon2: number };
         Returns: number;
       };
+      get_contact_link: { Args: { target_user_id: string }; Returns: string };
       get_contact_number: { Args: { viewer_id: string }; Returns: string };
       get_potential_matches: {
         Args: { limit_count?: number; offset_count?: number; user_id: string };
@@ -811,6 +978,7 @@ export type Database = {
         };
       };
       is_admin: { Args: Record<PropertyKey, never>; Returns: boolean };
+      is_blocked_pair: { Args: { a: string; b: string }; Returns: boolean };
       is_e164: { Args: { value: string }; Returns: boolean };
       is_moderator: { Args: Record<PropertyKey, never>; Returns: boolean };
       is_plain_name: { Args: { value: string }; Returns: boolean };
