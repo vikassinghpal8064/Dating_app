@@ -104,7 +104,11 @@ export function VerifyEmailPage() {
       return
     }
 
-    const { error: resendError } = await supabase.auth.resend({ type: 'signup', email })
+    const { error: resendError } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+    })
 
     setResending(false)
 

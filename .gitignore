@@ -9,6 +9,7 @@ build/
 .env
 .env.local
 .env.*.local
+.env.test
 
 # IDE
 .vscode/
@@ -43,6 +44,9 @@ node_modules/.tmp/
 # Supabase
 supabase/.temp/
 supabase/.branches/
+
+# Local demo seed: fictional personas + downloaded stock portraits. Never commit.
+local-seed/
 
 # Misc
 *.tgz

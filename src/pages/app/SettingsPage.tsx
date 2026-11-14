@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { Bell, Database, LogOut, Shield, SlidersHorizontal, User } from 'lucide-react'
+import { Bell, Database, LogOut, Shield, SlidersHorizontal, User, Ban } from 'lucide-react'
 import {
   Button,
   InlineMessage,
@@ -16,6 +16,8 @@ import { useAuth } from '../../lib/authContext'
 import { usePreferences } from '../../hooks/usePreferences'
 import { preferencesSchema } from '../../utils/validation'
 import { DISTANCE_BUCKETS, distanceBucket } from '../../utils'
+import { ContactSettings } from '../../components/contact/ContactSettings'
+import { RequestsList } from '../../components/contact/RequestsList'
 import type { UserPreferences } from '../../types'
 
 const SHOW_ME_OPTIONS = [
@@ -102,6 +104,7 @@ export function SettingsPage() {
 
       <QueryState status={status} error={error} onRetry={reload} label="your settings">
         {draft && (
+          <>
           <form onSubmit={handleSave} className="space-y-6" noValidate>
             {validationError && <InlineMessage tone="error">{validationError}</InlineMessage>}
             {saveError && <InlineMessage tone="error">{saveError}</InlineMessage>}
@@ -277,6 +280,33 @@ export function SettingsPage() {
               </Button>
             </div>
           </form>
+
+          {/* WhatsApp contact lives outside the preferences form above: it has
+              its own data surface and its own save button, and none of it
+              belongs in the preferences rows. */}
+          <div className="mt-6 space-y-6">
+            <ContactSettings />
+            <RequestsList />
+
+            {/* Blocked users link */}
+            <section className="glass rounded-2xl p-5">
+              <h2 className="flex items-center gap-2 font-display text-lg font-semibold text-dark-50">
+                <Ban className="h-5 w-5 text-danger-400" aria-hidden="true" />
+                Blocked users
+              </h2>
+              <p className="mt-2 text-sm text-dark-400">
+                Manage users you&apos;ve blocked. Blocked users can&apos;t see your profile or message you.
+              </p>
+              <Link
+                to="/app/settings/blocked"
+                className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-primary-400 underline underline-offset-2 hover:text-primary-300"
+              >
+                View blocked users
+                <span aria-hidden="true">→</span>
+              </Link>
+            </section>
+          </div>
+          </>
         )}
       </QueryState>
     </PageContainer>

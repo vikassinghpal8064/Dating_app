@@ -1,81 +1,93 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useCallback, useEffect, useState } from 'react'
 import {
-  BarChart,
-  Compass,
+  Check,
   Flag,
   Image as ImageIcon,
+  LayoutDashboard,
+  MessageSquare,
   ShieldCheck,
   Users,
+  X,
 } from 'lucide-react'
-import { PageContainer, PageHeader, Tabs } from '../../components/ui'
+import {
+  PageContainer,
+  PageHeader,
+  Tabs,
+  Button,
+  Avatar,
+  Textarea,
+  Modal,
+} from '../../components/ui'
 import type { TabItem } from '../../components/ui'
-import { useAuth } from '../../lib/authContext'
-
-/*
- * The moderation console renders no live data yet.
- *
- * The tables a moderator needs all exist now — `reports`, `profile_photos`,
- * `user_roles`, `blocks` — and the access control is real and is what this page
- * is here to prove. What is missing is this page's own read-and-write path
- * into them: the server grants a moderator verdict-writing and role-reading
- * surface, but no SECURITY DEFINER function that returns a queue, and no
- * cross-member profile read, so the browser cannot yet be handed a list of
- * other people's rows to render.
- *
- * Rather than render a dashboard of invented numbers, each section states what
- * it would need. Where the database already does the work, that is said plainly
- * rather than claimed as missing, because the distinction matters: a ban is
- * enforced in the schema today, and this page is the part that is not built.
- */
+import { supabase } from '../../lib/supabase'
+import { MessagesTab } from './MessagesTab'
+import { OverviewTab } from './OverviewTab'
+import { UsersTab } from './UsersTab'
 
 const adminTabs: TabItem[] = [
-  { value: 'access', label: 'Your access', icon: <ShieldCheck className="h-4 w-4" /> },
-  { value: 'reports', label: 'Reports', icon: <Flag className="h-4 w-4" /> },
-  { value: 'photos', label: 'Photo moderation', icon: <ImageIcon className="h-4 w-4" /> },
+  { value: 'overview', label: 'Overview', icon: <LayoutDashboard className="h-4 w-4" /> },
   { value: 'users', label: 'Users', icon: <Users className="h-4 w-4" /> },
-  { value: 'stats', label: 'Statistics', icon: <BarChart className="h-4 w-4" /> },
+  { value: 'messages', label: 'Messages', icon: <MessageSquare className="h-4 w-4" /> },
+  { value: 'reports', label: 'Reports', icon: <Flag className="h-4 w-4" /> },
+  { value: 'photos', label: 'Photos', icon: <ImageIcon className="h-4 w-4" /> },
+  { value: 'verification', label: 'Verification', icon: <ShieldCheck className="h-4 w-4" /> },
 ]
 
-interface SectionSpec {
-  heading: string
-  body: string
-  needs: string
+interface Report {
+  id: string
+  reporter_id: string
+  reported_id: string
+  reason: string
+  details: string | null
+  status: string
+  created_at: string
+  reported_profile: {
+    id: string
+    full_name: string
+    age: number
+    photos: string[]
+  }
 }
 
-const SECTIONS: Record<Exclude<TabItem['value'], 'access'>, SectionSpec> = {
-  reports: {
-    heading: 'No reports queue',
-    body: 'The reports table exists, with a reason and a status, and a member is allowed to file one. Nothing reads it back: there is no function that returns a moderator’s queue, so there is nothing to triage, respond to, or escalate from here.',
-    needs: 'Needs a security-definer function returning the open reports for a moderator, so the browser is handed a queue rather than every member’s rows.',
-  },
-  photos: {
-    heading: 'No photo queue',
-    body: 'Refusals are enforced. A moderator can record a verdict on a photo and it is withdrawn from that member’s profile immediately, on every later edit, and from the published feed — and a member cannot delete or overturn a verdict against their own photo. What is missing is the queue: a way to see which images are pending, and any record of who made a call.',
-    needs: 'Needs a security-definer function listing pending verdicts, a private storage bucket with signed-URL access for reviewers, and a moderator action log.',
-  },
-  users: {
-    heading: 'No user management',
-    body: 'Roles are real and server-held: an admin and a moderator role exist, is_admin() and is_moderator() answer for the caller, and a member can neither grant themselves a role nor write the is_admin column. What an administrator still cannot do from a browser is read another member’s row, so nothing can be listed, suspended, verified or deleted from here.',
-    needs: 'Needs a security-definer admin action per operation, each audited server-side, since the browser is never given another member’s row.',
-  },
-  stats: {
-    heading: 'No statistics',
-    body: 'Every aggregate this page would show requires reading across all profiles, which row-level security forbids for the current session — by design, since that is the same rule that stops a member reading anyone else. The numbers would also be meaningless at this size.',
-    needs: 'Needs a security-definer function returning aggregates, so the browser receives a count and never another member’s row.',
-  },
+interface Photo {
+  id: string
+  user_id: string
+  storage_path: string
+  photo_position: number
+  moderation_status: string
+  created_at: string
+  user_profile: {
+    id: string
+    full_name: string
+    age: number
+  }
+}
+
+interface Verification {
+  id: string
+  user_id: string
+  storage_path: string
+  pose_prompt: string
+  status: string
+  created_at: string
+  user_profile: {
+    id: string
+    full_name: string
+    age: number
+    is_verified: boolean
+  }
 }
 
 export function AdminPage() {
-  const { user } = useAuth()
-  const [activeTab, setActiveTab] = useState<string>('access')
-
-  const panelId = `panel-${activeTab}`
+  const [activeTab, setActiveTab] = useState('overview')
 
   return (
     <PageContainer>
       <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <PageHeader title="Admin" subtitle="Moderation and administration." />
+        <PageHeader
+          title="Admin"
+          subtitle="Owner analytics, member records and moderation in one place."
+        />
         <span className="inline-flex w-fit items-center gap-2 rounded-full bg-red-500/15 px-3 py-1 text-sm font-medium text-red-300">
           <ShieldCheck className="h-4 w-4" aria-hidden="true" />
           Administrator
@@ -88,74 +100,537 @@ export function AdminPage() {
         onChange={setActiveTab}
         variant="underline"
         label="Admin sections"
-        className="mb-6"
+        className="mb-6 flex-wrap sm:flex-nowrap"
       />
 
-      <div
-        id={panelId}
-        role="tabpanel"
-        aria-labelledby={`tab-${activeTab}`}
-        tabIndex={0}
-        className="focus-visible:outline-none"
-      >
-        {activeTab === 'access' ? (
-          <section className="glass rounded-2xl p-6">
-            <h2 className="font-display text-xl font-semibold text-dark-50">
-              You are signed in as an administrator
-            </h2>
-            <p className="mt-2 leading-relaxed text-dark-300">
-              This flag came from the <code className="text-primary-300">is_admin</code> column on
-              your profile row. It was not inferred in the browser from an email address, and it
-              cannot be set by you — the browser only ever writes the profile fields the edit form
-              exposes.
-            </p>
-
-            <dl className="mt-6 grid gap-4 sm:grid-cols-2">
-              <div className="rounded-xl border border-dark-700 bg-dark-900/60 p-4">
-                <dt className="text-sm text-dark-400">Account</dt>
-                <dd className="mt-1 text-dark-100">{user?.full_name}</dd>
-              </div>
-              <div className="rounded-xl border border-dark-700 bg-dark-900/60 p-4">
-                <dt className="text-sm text-dark-400">Email</dt>
-                <dd className="break-all text-dark-100">{user?.email}</dd>
-              </div>
-            </dl>
-
-            <div className="mt-6 rounded-xl border border-primary-500/25 bg-primary-600/5 p-4">
-              <h3 className="font-semibold text-dark-50">What this console cannot do yet</h3>
-              <p className="mt-2 text-sm leading-relaxed text-dark-300">
-                The four sections to the right are outlined but empty on purpose. Open each one to
-                see the specific table it would need. Shipping placeholder panels with invented
-                counts would tell you the moderation tooling exists when it does not.
-              </p>
-            </div>
-
-            <div className="mt-6">
-              <Link
-                to="/app/discover"
-                className="inline-flex items-center gap-2 rounded-xl border border-dark-700 bg-dark-800/60 px-5 py-3 font-medium text-dark-100 transition hover:border-primary-500/50 hover:bg-dark-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-400"
-              >
-                <Compass className="h-4 w-4" aria-hidden="true" />
-                Back to the app
-              </Link>
-            </div>
-          </section>
-        ) : (
-          activeTab in SECTIONS && <SectionPanel section={SECTIONS[activeTab as keyof typeof SECTIONS]} />
-        )}
+      <div className="focus-visible:outline-none">
+        {activeTab === 'overview' && <OverviewTab />}
+        {activeTab === 'users' && <UsersTab />}
+        {activeTab === 'messages' && <MessagesTab />}
+        {activeTab === 'reports' && <ReportsTab />}
+        {activeTab === 'photos' && <PhotosTab />}
+        {activeTab === 'verification' && <VerificationTab />}
       </div>
     </PageContainer>
   )
 }
 
-function SectionPanel({ section }: { section: SectionSpec }) {
+function ReportsTab() {
+  const [reports, setReports] = useState<Report[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selectedReport, setSelectedReport] = useState<Report | null>(null)
+  const [action, setAction] = useState<'dismiss' | 'warn' | 'ban' | null>(null)
+  const [reason, setReason] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  const loadReports = useCallback(async () => {
+    setLoading(true)
+    const { data, error } = await supabase.rpc('admin_get_reports_queue')
+    if (!error && data) {
+      setReports(data)
+    }
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    void loadReports()
+  }, [loadReports])
+
+  const handleAction = async () => {
+    if (!selectedReport || !action) return
+
+    setSubmitting(true)
+    try {
+      if (action === 'dismiss') {
+        await supabase.rpc('admin_set_report_status', {
+          p_report: selectedReport.id,
+          p_status: 'dismissed',
+        })
+      } else if (action === 'warn') {
+        await supabase.rpc('admin_set_report_status', {
+          p_report: selectedReport.id,
+          p_status: 'reviewing',
+        })
+        // Could send warning email here in the future
+      } else if (action === 'ban') {
+        await supabase.rpc('admin_ban_user', {
+          p_user: selectedReport.reported_id,
+          p_reason: reason || 'Violation of community guidelines',
+        })
+        await supabase.rpc('admin_set_report_status', {
+          p_report: selectedReport.id,
+          p_status: 'actioned',
+        })
+      }
+
+      setSelectedReport(null)
+      setAction(null)
+      setReason('')
+      await loadReports()
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (loading) {
+    return <div className="text-center text-dark-400">Loading reports...</div>
+  }
+
   return (
-    <section className="glass rounded-2xl p-6">
-      <h2 className="font-display text-xl font-semibold text-dark-50">{section.heading}</h2>
-      <p className="mt-2 leading-relaxed text-dark-300">{section.body}</p>
-      <p className="mt-4 rounded-xl border border-dark-700 bg-dark-900/60 p-4 text-sm leading-relaxed text-dark-400">
-        {section.needs}
-      </p>
+    <section className="space-y-4">
+      <h2 className="font-display text-xl font-semibold text-dark-50">Reports Queue</h2>
+      {reports.length === 0 ? (
+        <p className="text-dark-400">No open reports</p>
+      ) : (
+        <div className="space-y-3">
+          {reports.map((report) => (
+            <div
+              key={report.id}
+              className="rounded-2xl border border-dark-700 bg-dark-900/60 p-4"
+            >
+              <div className="flex items-start gap-4">
+                <Avatar
+                  src={report.reported_profile.photos[0] ?? null}
+                  fallback={report.reported_profile.full_name}
+                  size="lg"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-dark-50">
+                    {report.reported_profile.full_name}, {report.reported_profile.age}
+                  </p>
+                  <p className="mt-1 text-sm text-dark-400">
+                    Reported for: <span className="text-dark-200">{report.reason}</span>
+                  </p>
+                  {report.details && (
+                    <p className="mt-2 text-sm text-dark-300">{report.details}</p>
+                  )}
+                  <p className="mt-2 text-xs text-dark-500">
+                    {new Date(report.created_at).toLocaleDateString()}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedReport(report)}
+                >
+                  Review
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {selectedReport && (
+        <Modal
+          isOpen={true}
+          onClose={() => {
+            setSelectedReport(null)
+            setAction(null)
+            setReason('')
+          }}
+          title="Review Report"
+        >
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm text-dark-400">Reported user:</p>
+              <p className="font-medium text-dark-100">
+                {selectedReport.reported_profile.full_name}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-dark-400">Reason:</p>
+              <p className="text-dark-100">{selectedReport.reason}</p>
+            </div>
+            {selectedReport.details && (
+              <div>
+                <p className="text-sm text-dark-400">Details:</p>
+                <p className="text-dark-100">{selectedReport.details}</p>
+              </div>
+            )}
+
+            {action && (
+              <div className="space-y-3">
+                <Textarea
+                  label="Reason (optional)"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="Explain your decision..."
+                />
+                <div className="flex gap-2">
+                  <Button onClick={handleAction} loading={submitting}>
+                    Confirm
+                  </Button>
+                  <Button variant="outline" onClick={() => setAction(null)}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {!action && (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setAction('dismiss')}
+                >
+                  Dismiss
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setAction('warn')}
+                >
+                  Warn
+                </Button>
+                <button
+                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500"
+                  onClick={() => setAction('ban')}
+                >
+                  Ban User
+                </button>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+    </section>
+  )
+}
+
+function PhotosTab() {
+  const [photos, setPhotos] = useState<Photo[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null)
+  const [action, setAction] = useState<'approve' | 'reject' | null>(null)
+  const [reason, setReason] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({})
+
+  const loadPhotos = useCallback(async () => {
+    setLoading(true)
+    const { data, error } = await supabase.rpc('admin_get_photos_queue')
+    if (!error && data) {
+      setPhotos(data)
+      // Get signed URLs for all photos
+      const urls: Record<string, string> = {}
+      for (const photo of data) {
+        const { data: signedData } = await supabase.storage
+          .from('profile-photos')
+          .createSignedUrl(photo.storage_path, 3600)
+        if (signedData) {
+          urls[photo.id] = signedData.signedUrl
+        }
+      }
+      setSignedUrls(urls)
+    }
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    void loadPhotos()
+  }, [loadPhotos])
+
+  const handleAction = async () => {
+    if (!selectedPhoto || !action) return
+
+    setSubmitting(true)
+    try {
+      await supabase.rpc('admin_review_photo', {
+        p_photo: selectedPhoto.id,
+        p_approve: action === 'approve',
+        p_reason: reason || null,
+      })
+
+      setSelectedPhoto(null)
+      setAction(null)
+      setReason('')
+      await loadPhotos()
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (loading) {
+    return <div className="text-center text-dark-400">Loading photos...</div>
+  }
+
+  return (
+    <section className="space-y-4">
+      <h2 className="font-display text-xl font-semibold text-dark-50">Photo Moderation</h2>
+      {photos.length === 0 ? (
+        <p className="text-dark-400">No pending photos</p>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {photos.map((photo) => (
+            <div
+              key={photo.id}
+              className="overflow-hidden rounded-2xl border border-dark-700 bg-dark-900/60"
+            >
+              {signedUrls[photo.id] && (
+                <img
+                  src={signedUrls[photo.id]}
+                  alt={`Photo by ${photo.user_profile.full_name}`}
+                  className="aspect-square w-full object-cover"
+                />
+              )}
+              <div className="p-4">
+                <p className="font-medium text-dark-50">{photo.user_profile.full_name}</p>
+                <p className="text-sm text-dark-400">Age {photo.user_profile.age}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 w-full"
+                  onClick={() => setSelectedPhoto(photo)}
+                >
+                  Review
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {selectedPhoto && (
+        <Modal
+          isOpen={true}
+          onClose={() => {
+            setSelectedPhoto(null)
+            setAction(null)
+            setReason('')
+          }}
+          title="Review Photo"
+        >
+          <div className="space-y-4">
+            {signedUrls[selectedPhoto.id] && (
+              <img
+                src={signedUrls[selectedPhoto.id]}
+                alt="Photo for review"
+                className="w-full rounded-lg"
+              />
+            )}
+            <div>
+              <p className="text-sm text-dark-400">User:</p>
+              <p className="font-medium text-dark-100">
+                {selectedPhoto.user_profile.full_name}
+              </p>
+            </div>
+
+            {action && (
+              <div className="space-y-3">
+                <Textarea
+                  label="Reason (optional)"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="Explain your decision..."
+                />
+                <div className="flex gap-2">
+                  <Button onClick={handleAction} loading={submitting}>
+                    Confirm
+                  </Button>
+                  <Button variant="outline" onClick={() => setAction(null)}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {!action && (
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setAction('reject')}
+                  className="flex-1"
+                >
+                  <X className="mr-2 h-4 w-4" />
+                  Reject
+                </Button>
+                <Button
+                  onClick={() => setAction('approve')}
+                  className="flex-1"
+                >
+                  <Check className="mr-2 h-4 w-4" />
+                  Approve
+                </Button>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+    </section>
+  )
+}
+
+function VerificationTab() {
+  const [verifications, setVerifications] = useState<Verification[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selectedVerification, setSelectedVerification] = useState<Verification | null>(null)
+  const [action, setAction] = useState<'approve' | 'reject' | null>(null)
+  const [reason, setReason] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({})
+
+  const loadVerifications = useCallback(async () => {
+    setLoading(true)
+    const { data, error } = await supabase.rpc('admin_get_verification_queue')
+    if (!error && data) {
+      setVerifications(data)
+      // Get signed URLs for all verification photos
+      const urls: Record<string, string> = {}
+      for (const verification of data) {
+        const { data: signedData } = await supabase.storage
+          .from('verification-selfies')
+          .createSignedUrl(verification.storage_path, 3600)
+        if (signedData) {
+          urls[verification.id] = signedData.signedUrl
+        }
+      }
+      setSignedUrls(urls)
+    }
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    void loadVerifications()
+  }, [loadVerifications])
+
+  const handleAction = async () => {
+    if (!selectedVerification || !action) return
+
+    setSubmitting(true)
+    try {
+      await supabase.rpc('admin_review_verification', {
+        p_request: selectedVerification.id,
+        p_approve: action === 'approve',
+        p_reason: reason || null,
+      })
+
+      setSelectedVerification(null)
+      setAction(null)
+      setReason('')
+      await loadVerifications()
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (loading) {
+    return <div className="text-center text-dark-400">Loading verifications...</div>
+  }
+
+  return (
+    <section className="space-y-4">
+      <h2 className="font-display text-xl font-semibold text-dark-50">Verification Queue</h2>
+      {verifications.length === 0 ? (
+        <p className="text-dark-400">No pending verifications</p>
+      ) : (
+        <div className="space-y-3">
+          {verifications.map((verification) => (
+            <div
+              key={verification.id}
+              className="rounded-2xl border border-dark-700 bg-dark-900/60 p-4"
+            >
+              <div className="flex items-start gap-4">
+                {signedUrls[verification.id] && (
+                  <img
+                    src={signedUrls[verification.id]}
+                    alt="Verification selfie"
+                    className="h-20 w-20 rounded-lg object-cover"
+                  />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-dark-50">
+                    {verification.user_profile.full_name}, {verification.user_profile.age}
+                  </p>
+                  <p className="mt-1 text-sm text-dark-400">
+                    Pose: <span className="text-dark-200">{verification.pose_prompt}</span>
+                  </p>
+                  <p className="mt-1 text-xs text-dark-500">
+                    {new Date(verification.created_at).toLocaleDateString()}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedVerification(verification)}
+                >
+                  Review
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {selectedVerification && (
+        <Modal
+          isOpen={true}
+          onClose={() => {
+            setSelectedVerification(null)
+            setAction(null)
+            setReason('')
+          }}
+          title="Review Verification"
+        >
+          <div className="space-y-4">
+            {signedUrls[selectedVerification.id] && (
+              <img
+                src={signedUrls[selectedVerification.id]}
+                alt="Verification selfie"
+                className="w-full rounded-lg"
+              />
+            )}
+            <div>
+              <p className="text-sm text-dark-400">User:</p>
+              <p className="font-medium text-dark-100">
+                {selectedVerification.user_profile.full_name}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-dark-400">Pose instruction:</p>
+              <p className="text-dark-100">{selectedVerification.pose_prompt}</p>
+            </div>
+
+            {action && (
+              <div className="space-y-3">
+                <Textarea
+                  label="Reason (optional)"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="Explain your decision..."
+                />
+                <div className="flex gap-2">
+                  <Button onClick={handleAction} loading={submitting}>
+                    Confirm
+                  </Button>
+                  <Button variant="outline" onClick={() => setAction(null)}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {!action && (
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setAction('reject')}
+                  className="flex-1"
+                >
+                  <X className="mr-2 h-4 w-4" />
+                  Reject
+                </Button>
+                <Button
+                  onClick={() => setAction('approve')}
+                  className="flex-1"
+                >
+                  <Check className="mr-2 h-4 w-4" />
+                  Approve
+                </Button>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
     </section>
   )
 }

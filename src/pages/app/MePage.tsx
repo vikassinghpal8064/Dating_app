@@ -1,8 +1,11 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Compass, Heart, MapPin, MessageSquare, Pen, Shield } from 'lucide-react'
-import { Avatar, Badge, Chip, PageContainer, PageHeader } from '../../components/ui'
+import { Avatar, Badge, Chip, PageContainer, PageHeader, Toggle, useToast } from '../../components/ui'
 import { useAuth } from '../../lib/authContext'
 import { useMatches } from '../../hooks/useMatches'
+import { useMemberPhotos } from '../../hooks/useMemberPhotos'
+import { MIN_PROFILE_PHOTOS } from '../../utils/profileCompleteness'
 
 const GENDER_LABELS: Record<string, string> = {
   male: 'Man',
@@ -15,20 +18,60 @@ const GENDER_LABELS: Record<string, string> = {
 /** What a complete profile needs before it can do any work for you. */
 const COMPLETENESS_CHECKS: { key: 'bio' | 'photos' | 'location' | 'interestedIn'; label: string }[] = [
   { key: 'bio', label: 'Write a bio' },
-  { key: 'photos', label: 'Add at least one photo' },
+  { key: 'photos', label: `Add at least ${MIN_PROFILE_PHOTOS} photos` },
   { key: 'location', label: 'Set your city' },
   { key: 'interestedIn', label: 'Say who you are interested in' },
 ]
 
 export function MePage() {
-  const { user } = useAuth()
+  const { user, updateProfile } = useAuth()
   const { data: matches, status: matchesStatus } = useMatches()
+  const { photos: ownPhotos } = useMemberPhotos()
+  const toast = useToast()
+
+  const [paused, setPaused] = useState(user?.profile_paused ?? false)
+  const [pausing, setPausing] = useState(false)
+
+  // Keep the toggle in sync once the profile (re)loads.
+  useEffect(() => {
+    setPaused(user?.profile_paused ?? false)
+  }, [user?.profile_paused])
+
+  const togglePause = async (next: boolean) => {
+    if (pausing) return
+    setPausing(true)
+    setPaused(next) // optimistic
+    const { error } = await updateProfile({ profile_paused: next })
+    setPausing(false)
+
+    if (error) {
+      setPaused(!next) // rollback
+      toast.addToast({ title: 'Could not update visibility', description: error.message, type: 'error' })
+      return
+    }
+    toast.addToast({
+      title: next ? 'Profile paused' : 'Profile visible again',
+      description: next
+        ? 'You are hidden from discovery and search until you unpause.'
+        : 'You are visible to other members again.',
+      type: next ? 'info' : 'success',
+    })
+  }
 
   const matchCount = matches?.length
 
+  // Photos come from two sources: the member's uploads (`member_photos`,
+  // signed URLs for rendering) and pasted https URLs on the profile row.
+  // Uploads take display priority, matching every other surface.
+  const displayPhotos = [
+    ...ownPhotos.map((photo) => photo.signedUrl).filter((url): url is string => Boolean(url)),
+    ...(user?.photos ?? []),
+  ]
+  const photoTotal = (user?.photos?.length ?? 0) + (user?.photos_count ?? 0)
+
   const checks: Record<(typeof COMPLETENESS_CHECKS)[number]['key'], boolean> = {
     bio: Boolean(user?.bio?.trim()),
-    photos: (user?.photos?.length ?? 0) > 0,
+    photos: photoTotal >= MIN_PROFILE_PHOTOS,
     location: Boolean(user?.location_city?.trim()),
     interestedIn: (user?.interested_in?.length ?? 0) > 0,
   }
@@ -45,7 +88,7 @@ export function MePage() {
       <article className="glass rounded-2xl p-6">
         <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-start sm:text-left">
           <Avatar
-            src={user?.photos?.[0] ?? null}
+            src={displayPhotos[0] ?? null}
             fallback={user?.full_name ?? '?'}
             alt="Your profile photo"
             size="2xl"
@@ -117,6 +160,28 @@ export function MePage() {
       </nav>
 
       <section className="glass mt-6 rounded-2xl p-5">
+        <h2 className="font-display text-lg font-semibold text-dark-50">Profile visibility</h2>
+        <p className="mt-1 text-sm text-dark-400">
+          Pause your profile to hide it from discovery, search and other profiles. Nothing is
+          deleted — your existing matches and chats stay exactly as they are.
+        </p>
+        <div className="mt-4 rounded-xl border border-dark-700 bg-dark-900/60 p-4">
+          <Toggle
+            id="profile-pause"
+            checked={paused}
+            disabled={pausing}
+            onChange={(event) => void togglePause(event.target.checked)}
+            label={paused ? 'Profile is paused' : 'Profile is visible'}
+            description={
+              paused
+                ? 'No one new can see you. Flip this any time to come back.'
+                : 'Other members can find you in discovery and search.'
+            }
+          />
+        </div>
+      </section>
+
+      <section className="glass mt-6 rounded-2xl p-5">
         <h2 className="font-display text-lg font-semibold text-dark-50">Profile strength</h2>
         <p className="mt-1 text-sm text-dark-400">
           {completed} of {COMPLETENESS_CHECKS.length} complete. Everything else on HeartConnect is
@@ -161,6 +226,32 @@ export function MePage() {
       </section>
 
       <section className="glass mt-6 rounded-2xl p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="font-display text-lg font-semibold text-dark-50">Profile verification</h2>
+            <p className="mt-1 text-sm text-dark-400">
+              {user?.is_verified
+                ? 'Your profile is verified. Members can see your verified badge.'
+                : 'Get verified to build trust with other members.'}
+            </p>
+          </div>
+          {user?.is_verified ? (
+            <Badge variant="verified" size="md">
+              <Shield className="h-4 w-4" aria-hidden="true" />
+              Verified
+            </Badge>
+          ) : (
+            <Link
+              to="/app/verify"
+              className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-primary-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-primary-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-400"
+            >
+              Verify now
+            </Link>
+          )}
+        </div>
+      </section>
+
+      <section className="glass mt-6 rounded-2xl p-5">
         <h2 className="font-display text-lg font-semibold text-dark-50">Your activity</h2>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div className="rounded-xl border border-dark-700 bg-dark-900/60 p-4">
@@ -187,8 +278,7 @@ export function MePage() {
 
         <p className="mt-4 flex items-start gap-2 text-xs leading-relaxed text-dark-500">
           <Heart className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          Likes sent and likes received are not counted here. Liking is not wired up in this
-          build, so there is nothing truthful to display.
+          Likes you sent and likes you received live in the Likes tab. Nothing here is ever shown to other members.
         </p>
       </section>
     </PageContainer>

@@ -175,7 +175,9 @@ select
   d->>'education',
   d->>'occupation',
   (d->>'looking_for')::public.looking_for,
-  string_to_array(d->>'interests', ',')::text[],
+  (select coalesce(array_agg(btrim(x)), '{}'::text[])
+     from unnest(string_to_array(d->>'interests', ',')) x
+    where btrim(x) <> ''),
   string_to_array(d->>'languages', ',')::text[],
   d->>'smoking',
   d->>'drinking',
@@ -251,3 +253,74 @@ insert into profile_photos (user_id, storage_path, position, moderation_status) 
   ('20000000-0000-4000-8000-000000000002', 'https://placehold.co/600x800/png?text=Diya+1', 0, 'approved'),
   ('20000000-0000-4000-8000-000000000012', 'https://placehold.co/600x800/png?text=Tanya+1', 0, 'approved')
 on conflict (storage_path) do nothing;
+
+-- ---------------------------------------------------------------------------
+-- Uploaded photos (member_photos), for the same fictional members.
+--
+-- These rows describe objects that the placeholder storage does not actually
+-- serve, so the client's signed-URL resolution drops them; what matters here is
+-- the moderation shape they give the feed and the completeness signal. The
+-- demo member carries two approved uploads so its profile satisfies the
+-- two-photo completeness requirement.
+-- ---------------------------------------------------------------------------
+insert into member_photos (user_id, storage_path, position, moderation_status) values
+  -- demo: two approved uploads.
+  ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111/00000000-0000-4000-8000-000000000001.webp', 0, 'approved'),
+  ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111/00000000-0000-4000-8000-000000000002.webp', 1, 'approved'),
+  -- aarav: two approved, one pending (moderation queue).
+  ('20000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001/00000000-0000-4000-8000-000000000101.webp', 0, 'approved'),
+  ('20000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001/00000000-0000-4000-8000-000000000102.webp', 1, 'approved'),
+  ('20000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001/00000000-0000-4000-8000-000000000103.webp', 2, 'pending'),
+  -- diya: two approved, one pending.
+  ('20000000-0000-4000-8000-000000000002', '20000000-0000-4000-8000-000000000002/00000000-0000-4000-8000-000000000201.webp', 0, 'approved'),
+  ('20000000-0000-4000-8000-000000000002', '20000000-0000-4000-8000-000000000002/00000000-0000-4000-8000-000000000202.webp', 1, 'approved'),
+  ('20000000-0000-4000-8000-000000000002', '20000000-0000-4000-8000-000000000002/00000000-0000-4000-8000-000000000203.webp', 2, 'pending'),
+  -- tanya: one approved, one pending.
+  ('20000000-0000-4000-8000-000000000012', '20000000-0000-4000-8000-000000000012/00000000-0000-4000-8000-000000000301.webp', 0, 'approved'),
+  ('20000000-0000-4000-8000-000000000012', '20000000-0000-4000-8000-000000000012/00000000-0000-4000-8000-000000000302.webp', 1, 'pending'),
+  -- vivek: one approved upload (unverified member, so the verified-only
+  -- filter has a real set to prune).
+  ('20000000-0000-4000-8000-000000000007', '20000000-0000-4000-8000-000000000007/00000000-0000-4000-8000-000000000401.webp', 0, 'approved')
+on conflict (storage_path) do nothing;
+
+-- ---------------------------------------------------------------------------
+-- City gazetteer: the search autocomplete source.
+--
+-- Same two-decimal rounding as every stored coordinate in this schema. Every
+-- city below appears in the fictional members above, plus a few extras so the
+-- autocomplete has something to offer a member typing a city that nobody in
+-- the seed lives in.
+-- ---------------------------------------------------------------------------
+insert into public.city_coordinates (city, country, latitude, longitude) values
+  ('Mumbai', 'India', 19.08, 72.88),
+  ('Pune', 'India', 18.52, 73.86),
+  ('Kochi', 'India', 9.93, 76.27),
+  ('Delhi', 'India', 28.61, 77.21),
+  ('Bengaluru', 'India', 12.97, 77.59),
+  ('Nashik', 'India', 20.00, 73.79),
+  ('Chennai', 'India', 13.08, 80.27),
+  ('Hyderabad', 'India', 17.39, 78.49),
+  ('Kolkata', 'India', 22.57, 88.36),
+  ('Jaipur', 'India', 26.91, 75.79),
+  ('Bhopal', 'India', 23.26, 77.41),
+  ('Gurugram', 'India', 28.46, 77.03),
+  ('Leeds', 'United Kingdom', 53.80, -1.55),
+  ('London', 'United Kingdom', 51.51, -0.13),
+  ('Manchester', 'United Kingdom', 53.48, -2.24),
+  ('Edinburgh', 'United Kingdom', 55.95, -3.19),
+  ('Paris', 'France', 48.86, 2.35),
+  ('Berlin', 'Germany', 52.52, 13.41),
+  ('New York', 'United States', 40.71, -74.01),
+  ('San Francisco', 'United States', 37.77, -122.42)
+on conflict (city, country) do nothing;
+
+-- ---------------------------------------------------------------------------
+-- A one-sided like, so the signed-in demo member completes a match the moment
+-- they like the nearest candidate (aarav). Purposely one-sided: the seeded
+-- set must still contain no matches (test 03 asserts that), and the like only
+-- becomes a match when the deck's own send_like call reciprocates it.
+-- ---------------------------------------------------------------------------
+insert into public.likes (liker_id, liked_id, type)
+values ('20000000-0000-4000-8000-000000000001',
+        '11111111-1111-4111-8111-111111111111', 'like')
+on conflict (liker_id, liked_id) do nothing;

@@ -53,7 +53,12 @@ function collectAppErrors(page: Page): string[] {
  */
 async function gotoAndSettle(page: Page, path: string) {
   await page.goto(path)
-  await expect(page.locator('h1, h2').first()).toBeVisible({ timeout: 15_000 })
+  // The FIRST heading is not necessarily the route's own: the auth layout's
+  // desktop-only marketing panel (`hidden lg:flex`, `aria-hidden`) carries an
+  // <h2> that precedes the form's <h1> in DOM order and is display:none on
+  // mobile viewports. Settle on the first *visible* heading — which is the
+  // route that actually painted.
+  await expect(page.locator('h1:visible, h2:visible').first()).toBeVisible({ timeout: 15_000 })
   // Wait for the network to go quiet before returning.
   //
   // A heading can be visible while the route's lazy chunk is still streaming in
@@ -235,7 +240,7 @@ test.describe('Sign-up validation', () => {
     await page.getByLabel('Confirm password').fill('weak')
     await submitButton(page).click()
 
-    await expect(page.getByText('Password must be at least 8 characters')).toBeVisible()
+    await expect(page.getByText('Password must be at least 10 characters')).toBeVisible()
   })
 
   test('mismatched passwords are rejected', async ({ page }) => {
@@ -247,7 +252,7 @@ test.describe('Sign-up validation', () => {
     await expect(page.getByText('Passwords do not match')).toBeVisible()
   })
 
-  test('the terms checkbox is required', async ({ page }) => {
+  test('the age confirmation and the terms checkbox are each required', async ({ page }) => {
     await page.getByLabel('Email').fill('someone@example.com')
     await passwordField(page).fill('Valid1!pass')
     await page.getByLabel('Confirm password').fill('Valid1!pass')
@@ -256,6 +261,8 @@ test.describe('Sign-up validation', () => {
     await page.getByLabel('City').fill('Leeds')
     await page.getByLabel('Country').fill('United Kingdom')
     await page.getByRole('checkbox', { name: 'Women' }).check()
+    // Terms is left unticked deliberately; the 18+ box alone must not satisfy it.
+    await page.getByRole('checkbox', { name: 'I am 18 or older' }).check()
     await submitButton(page).click()
 
     await expect(
@@ -267,7 +274,7 @@ test.describe('Sign-up validation', () => {
     const checklist = page.locator('#password-requirements li')
 
     await expect(checklist).toHaveCount(5)
-    await expect(checklist.filter({ hasText: 'At least 8 characters' })).toContainText('not met')
+    await expect(checklist.filter({ hasText: 'At least 10 characters' })).toContainText('not met')
 
     await passwordField(page).fill('Valid1!pass')
 
@@ -301,10 +308,13 @@ test.describe('Under-18 rejection', () => {
     await page.getByLabel('City').fill('Leeds')
     await page.getByLabel('Country').fill('United Kingdom')
     await page.getByRole('checkbox', { name: 'Women' }).check()
-    await page.getByRole('checkbox', { name: /I agree to the/i }).check()
+    await page.getByRole('checkbox', { name: 'I am 18 or older' }).check()
+    await page.getByRole('checkbox', { name: 'I accept the Terms and Privacy Policy' }).check()
     await submitButton(page).click()
 
-    await expect(page.getByText('You must be at least 18 years old')).toBeVisible()
+    await expect(
+      page.getByText('You must be at least 18 years old to join HeartConnect')
+    ).toBeVisible()
     // Nothing was submitted, so we are still on the form.
     await expect(page).toHaveURL(/\/auth\/signup$/)
   })

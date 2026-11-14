@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { AlertCircle, CheckCircle2, Eye, EyeOff, Lock } from 'lucide-react'
-import { Button, Label } from '../../components/ui'
+import { Button, Label, PageSpinner } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { PASSWORD_REQUIREMENTS } from '../../utils/validation'
 import { cn } from '../../utils'
+
+type LinkStatus = 'checking' | 'ok' | 'invalid'
 
 export function ResetPasswordPage() {
   const [searchParams] = useSearchParams()
@@ -16,11 +18,33 @@ export function ResetPasswordPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
+  const [linkStatus, setLinkStatus] = useState<LinkStatus>('checking')
 
-  // Supabase puts the recovery token in the URL fragment as
-  // `#access_token=...&type=recovery`. If it is missing there is no recovery
-  // session and `updateUser` would fail with a confusing message.
-  const hasRecoveryToken = searchParams.has('error') || window.location.hash.includes('access_token')
+  /*
+   * Whether this page is a live recovery link.
+   *
+   * The implicit flow ships the recovery token as `#access_token=...`. The
+   * PKCE flow ships a `code` in the query string that supabase-js exchanges
+   * *before* this component mounts and then strips from the URL — leaving a
+   * session but no trace. So "did the link work" is decided by the session,
+   * not by the URL shape. A bare visit (no params, no session) still resolves
+   * to the "not valid" screen, and an `error` param (expired/link used twice)
+   * is treated as invalid even if a session lingers.
+   */
+  useEffect(() => {
+    const checkLink = async () => {
+      const hasErrorParam = searchParams.has('error')
+      const hasCodeOrToken =
+        searchParams.has('code') || window.location.hash.includes('access_token')
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      setLinkStatus((session && !hasErrorParam) || (hasCodeOrToken && !hasErrorParam) ? 'ok' : 'invalid')
+    }
+    void checkLink()
+  }, [searchParams])
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -43,6 +67,14 @@ export function ResetPasswordPage() {
       const { error: updateError } = await supabase.auth.updateUser({ password })
 
       if (updateError) throw updateError
+
+      // The recovery link itself created the session. End it so the "sign in
+      // with the new password" promise on the next screen is true, and the
+      // member authenticates afresh instead of carrying the reset flow's
+      // session into the app. signOut resolves to {error} rather than
+      // throwing, and a failure here must not hide the fact that the password
+      // was changed.
+      await supabase.auth.signOut()
 
       setSuccess(true)
     } catch (err) {
@@ -73,7 +105,16 @@ export function ResetPasswordPage() {
     )
   }
 
-  if (!hasRecoveryToken) {
+  if (linkStatus === 'checking') {
+    return (
+      <div className="space-y-6 text-center animate-fade-in" role="status">
+        <PageSpinner size="lg" variant="primary" className="mx-auto" />
+        <p className="text-dark-400 text-sm">Checking your reset link…</p>
+      </div>
+    )
+  }
+
+  if (linkStatus === 'invalid') {
     return (
       <div className="space-y-6 text-center animate-fade-in">
         <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mx-auto">

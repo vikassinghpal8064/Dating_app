@@ -1,165 +1,258 @@
-import { useCallback, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Search as SearchIcon, SlidersHorizontal, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { RotateCcw, Search as SearchIcon, SlidersHorizontal } from 'lucide-react'
+import { useAuth } from '../../lib/authContext'
+import { useSearchProfiles } from '../../hooks/useSearch'
+import { CityAutocomplete } from '../../components/search/CityAutocomplete'
+import { FiltersPanel } from '../../components/search/FiltersPanel'
+import { SearchResultCard } from '../../components/search/SearchResultCard'
 import {
   Button,
-  Input,
+  EmptyState,
+  InlineMessage,
   PageContainer,
   PageHeader,
-  ProfileCard,
-  QueryState,
-  SearchEmptyState,
+  ProfileCardSkeleton,
 } from '../../components/ui'
-import { useDiscoverProfiles } from '../../hooks/useDiscover'
-import type { PublicProfile } from '../../types'
+import {
+  activeFilterCount,
+  ANYWHERE_RADIUS_LABEL,
+  buildSearchParams,
+  parseSearchParams,
+  RADIUS_OPTIONS,
+  type SearchCenter,
+} from '../../utils/search'
+import type { CityOption, DistanceRadiusKm, SearchFilters } from '../../types'
 
-const GENDER_FILTERS: { value: string; label: string }[] = [
-  { value: 'everyone', label: 'Everyone' },
-  { value: 'male', label: 'Men' },
-  { value: 'female', label: 'Women' },
-  { value: 'non_binary', label: 'Non-binary' },
-]
-
+/**
+ * /search — people finder with a shareable, back-button-friendly URL for every
+ * filter. The query string is the source of truth: filters parse from it, and
+ * every change writes back to it, so results reload on back/forward and a copy
+ * of the link shows the same grid to someone else.
+ */
 export function SearchPage() {
   const navigate = useNavigate()
-  const { data, status, error, reload } = useDiscoverProfiles(50)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const filters = useMemo(() => parseSearchParams(searchParams.toString()), [searchParams])
+  const { user } = useAuth()
 
-  const [query, setQuery] = useState('')
-  const [gender, setGender] = useState('everyone')
-  const [city, setCity] = useState('')
+  const callerCenter: SearchCenter | null =
+    user?.latitude != null && user?.longitude != null
+      ? { lat: user.latitude, lng: user.longitude }
+      : null
 
-  const results = useMemo(() => {
-    const all = data ?? []
-    const needle = query.trim().toLowerCase()
-    const cityNeedle = city.trim().toLowerCase()
+  const [cityText, setCityText] = useState('')
+  const [filtersOpen, setFiltersOpen] = useState(false)
 
-    return all.filter((profile: PublicProfile) => {
-      if (gender !== 'everyone' && !profile.interested_in.includes(gender)) {
-        // Fall back to the person's own gender so the filter matches how people
-        // describe themselves as well as who they are looking for.
-        if (profile.gender !== gender) return false
-      }
-      if (cityNeedle && !profile.location_city.toLowerCase().includes(cityNeedle)) {
-        return false
-      }
-      if (!needle) return true
-      return (
-        profile.full_name.toLowerCase().includes(needle) ||
-        profile.location_city.toLowerCase().includes(needle) ||
-        (profile.bio ?? '').toLowerCase().includes(needle)
-      )
-    })
-  }, [data, query, gender, city])
+  // Keep the field in step with the applied filter (a shared link, back/forward).
+  useEffect(() => {
+    setCityText((prev) => (filters.city ? (prev === '' ? filters.city : prev) : ''))
+  }, [filters.city])
 
-  const hasFilters = query.trim() !== '' || gender !== 'everyone' || city.trim() !== ''
+  const applyFilters = useCallback(
+    (patch: Partial<SearchFilters>) => {
+      setSearchParams(new URLSearchParams(buildSearchParams({ ...filters, ...patch })))
+    },
+    [filters, setSearchParams]
+  )
 
-  const clearFilters = useCallback(() => {
-    setQuery('')
-    setGender('everyone')
-    setCity('')
-  }, [])
+  const handleSelectCity = (city: CityOption) => {
+    setCityText(city.city)
+    applyFilters({ city: city.city })
+  }
+
+  const handleClearCity = () => {
+    setCityText('')
+    applyFilters({ city: null })
+  }
+
+  const setRadius = (radiusKm: DistanceRadiusKm | null) => applyFilters({ radiusKm })
+
+  const resetAll = useCallback(() => {
+    setCityText('')
+    setSearchParams(new URLSearchParams())
+  }, [setSearchParams])
+
+  const { profiles, status, error, reload, loadMore, hasMore, loadingMore } =
+    useSearchProfiles(filters, callerCenter)
+
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) void loadMore()
+      },
+      { rootMargin: '400px 0px' }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [loadMore])
+
+  const activeCount = activeFilterCount(filters)
+  const loading = status === 'idle' || (status === 'loading' && profiles.length === 0)
+  const showError = status === 'error' && profiles.length === 0
 
   return (
     <PageContainer>
       <PageHeader
         title="Search"
-        subtitle="Filter the people already visible to you. Nothing here reveals more than a match could see."
+        subtitle="Find people by city and distance. Every filter is baked into the link."
       />
 
-      <form
-        className="mb-8 grid gap-4 rounded-2xl border border-dark-700 bg-dark-900/60 p-5 sm:grid-cols-2 lg:grid-cols-4"
-        onSubmit={(e) => e.preventDefault()}
-        role="search"
+      {/* Controls */}
+      <section
+        className="rounded-2xl border border-dark-800 bg-dark-900/60 p-4"
+        aria-label="Search controls"
       >
-        <div className="lg:col-span-2">
-          <Input
-            label="Search by name or bio"
-            type="search"
-            placeholder="Try a name, city or interest"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+        <div className="grid gap-4 md:grid-cols-2">
+          <CityAutocomplete
+            value={cityText}
+            selectedCityName={filters.city}
+            onSelect={handleSelectCity}
+            onInputChange={setCityText}
+            onClear={handleClearCity}
           />
+
+          <div>
+            <p id="radius-label" className="mb-1.5 block text-sm font-medium text-dark-300">
+              Distance
+            </p>
+            <div
+              role="group"
+              aria-labelledby="radius-label"
+              className="flex flex-wrap items-center gap-1.5"
+            >
+              {RADIUS_OPTIONS.map((option) => {
+                const active = filters.radiusKm === option.value
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setRadius(active ? null : option.value)}
+                    className={[
+                      'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
+                      active
+                        ? 'border-primary-500 bg-primary-600/30 text-primary-200'
+                        : 'border-dark-600 text-dark-300 hover:border-dark-500',
+                    ].join(' ')}
+                  >
+                    {option.label}
+                  </button>
+                )
+              })}
+              <button
+                type="button"
+                aria-pressed={filters.radiusKm === null}
+                onClick={() => setRadius(null)}
+                className={[
+                  'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
+                  filters.radiusKm === null
+                    ? 'border-primary-500 bg-primary-600/30 text-primary-200'
+                    : 'border-dark-600 text-dark-300 hover:border-dark-500',
+                ].join(' ')}
+              >
+                {ANYWHERE_RADIUS_LABEL}
+              </button>
+            </div>
+          </div>
         </div>
 
-        <Input
-          label="City"
-          placeholder="Any city"
-          value={city}
-          onChange={(e) => setCity(e.target.value)}
-        />
-
-        <fieldset>
-          <legend className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-dark-300">
+        <div className="mt-4 flex items-center gap-3 border-t border-dark-800 pt-4">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setFiltersOpen(true)}
+            aria-label={`More filters${activeCount > 0 ? ` (${activeCount} active)` : ''}`}
+          >
             <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
-            Show
-          </legend>
-          <div className="flex flex-wrap gap-2">
-            {GENDER_FILTERS.map((filter) => {
-              const isActive = gender === filter.value
-              return (
-                <button
-                  key={filter.value}
-                  type="button"
-                  aria-pressed={isActive}
-                  onClick={() => setGender(filter.value)}
-                  className={[
-                    'rounded-full border px-3 py-1.5 text-sm font-medium transition-colors',
-                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
-                    isActive
-                      ? 'border-primary-500 bg-primary-600/30 text-primary-200'
-                      : 'border-dark-600 text-dark-300 hover:border-dark-500',
-                  ].join(' ')}
-                >
-                  {filter.label}
-                </button>
-              )
-            })}
-          </div>
-        </fieldset>
-
-        {hasFilters && (
-          <div className="sm:col-span-2 lg:col-span-4">
-            <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
-              <X className="h-4 w-4" aria-hidden="true" />
-              Clear filters
+            Filters
+            {activeCount > 0 && (
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-600 px-1.5 text-xs font-semibold text-white">
+                {activeCount}
+              </span>
+            )}
+          </Button>
+          {activeCount > 0 && (
+            <Button variant="ghost" size="sm" onClick={resetAll} aria-label="Clear all filters">
+              <RotateCcw className="h-4 w-4" aria-hidden="true" />
+              Reset
             </Button>
-          </div>
-        )}
-      </form>
+          )}
+        </div>
+      </section>
 
-      <p className="mb-4 text-sm text-dark-400" aria-live="polite">
-        {status === 'success'
-          ? `${results.length} ${results.length === 1 ? 'person' : 'people'} found`
-          : 'Searching…'}
+      {/* Results */}
+      <p className="mt-6 text-sm text-dark-400" aria-live="polite">
+        {status === 'success' && profiles.length > 0
+          ? `${profiles.length} member${profiles.length === 1 ? '' : 's'} found`
+          : loading
+            ? 'Finding people nearby…'
+            : '\u00a0'}
       </p>
 
-      <QueryState
-        status={status}
-        error={error}
-        onRetry={reload}
-        label="results"
-        isEmpty={results.length === 0}
-        empty={<SearchEmptyState onAction={clearFilters} />}
-      >
-        <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {results.map((profile) => (
-            <li key={profile.id}>
-              <ProfileCard
-                profile={profile}
-                showActions={false}
-                onViewProfile={() => navigate(`/app/profile/${profile.id}`)}
-              />
+      {showError ? (
+        <div className="mt-4 space-y-4">
+          <InlineMessage tone="error">
+            The search could not be completed{error ? `: ${error}` : '.'}
+          </InlineMessage>
+          <Button variant="outline" size="sm" onClick={reload}>
+            Try again
+          </Button>
+        </div>
+      ) : loading ? (
+        <ul className="mt-4 grid gap-6 sm:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
+          {Array.from({ length: 6 }, (_, index) => (
+            <li key={index}>
+              <ProfileCardSkeleton />
             </li>
           ))}
         </ul>
-      </QueryState>
-
-      {status === 'success' && !hasFilters && results.length > 0 && (
-        <p className="mt-8 flex items-center justify-center gap-2 text-center text-xs text-dark-500">
-          <SearchIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
-          Only people who are already visible to you appear here.
-        </p>
+      ) : profiles.length === 0 ? (
+        <EmptyState
+          icon={<SearchIcon className="h-10 w-10 text-primary-500" aria-hidden="true" />}
+          title="No one matches those filters"
+          description="Widen the distance, clear a filter or two, and try again — new members join every day."
+          action={
+            activeCount > 0
+              ? { label: 'Reset filters', onClick: resetAll }
+              : { label: 'Explore Discover', onClick: () => navigate('/app/discover') }
+          }
+          className="mt-8"
+        />
+      ) : (
+        <>
+          <ul className="mt-4 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {profiles.map((profile) => (
+              <li key={profile.id}>
+                <SearchResultCard profile={profile} />
+              </li>
+            ))}
+          </ul>
+          <div ref={sentinelRef} className="flex justify-center py-6" aria-hidden="true">
+            {loadingMore && (
+              <span className="text-sm text-dark-500" role="status">
+                Loading more…
+              </span>
+            )}
+            {!hasMore && profiles.length > 0 && (
+              <span className="text-sm text-dark-500">You&rsquo;re all caught up.</span>
+            )}
+          </div>
+        </>
       )}
+
+      <FiltersPanel
+        open={filtersOpen}
+        filters={filters}
+        onChange={applyFilters}
+        onReset={resetAll}
+        onClose={() => setFiltersOpen(false)}
+      />
     </PageContainer>
   )
 }

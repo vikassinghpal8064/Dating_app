@@ -2,6 +2,7 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { useAuth } from '../lib/authContext'
 import { PageSpinner } from '../components/ui'
+import { COMPLETION_ALLOWED_PATH, isProfileComplete } from '../utils/profileCompleteness'
 
 function GuardFallback() {
   return (
@@ -23,6 +24,10 @@ function GuardShell({ children }: GuardProps) {
 /**
  * Requires an authenticated user. Sends anonymous visitors to the login page
  * and remembers where they were heading.
+ *
+ * A signed-in member whose profile is incomplete is sent to /onboarding unless
+ * they are already on a screen the onboarding flow itself uses (profile / edit
+ * / settings / another member's profile), which would otherwise loop forever.
  */
 export function ProtectedRoute({ children }: GuardProps = {}) {
   const { user, loading } = useAuth()
@@ -32,6 +37,10 @@ export function ProtectedRoute({ children }: GuardProps = {}) {
 
   if (!user) {
     return <Navigate to="/auth/login" state={{ from: location.pathname }} replace />
+  }
+
+  if (!isProfileComplete(user) && !COMPLETION_ALLOWED_PATH.test(location.pathname)) {
+    return <Navigate to="/onboarding" replace />
   }
 
   return <GuardShell>{children}</GuardShell>

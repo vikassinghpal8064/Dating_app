@@ -2,8 +2,16 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Eye, EyeOff, AlertCircle, CheckCircle2 } from 'lucide-react'
-import { Button, Input, Label, Select } from '../../components/ui'
+import { AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react'
+import {
+  Button,
+  Checkbox,
+  GoogleButton,
+  Input,
+  Label,
+  PasswordStrengthMeter,
+  Select,
+} from '../../components/ui'
 import {
   PASSWORD_REQUIREMENTS,
   latestDateOfBirth,
@@ -27,6 +35,26 @@ const interestedInOptions = [
   { value: 'everyone', label: 'Everyone' },
 ]
 
+/**
+ * Sign-up failures that carry a message worth softening. Everything else is
+ * surfaced verbatim so a real problem is never hidden behind a platitude.
+ */
+function friendlySignUpError(message: string): string {
+  const normalised = message.toLowerCase()
+
+  if (normalised.includes('already registered') || normalised.includes('already been registered')) {
+    return 'An account with this email already exists. Try signing in instead.'
+  }
+  // The database trigger that re-checks age raises exactly this sentence.
+  if (normalised.includes('18 years old')) {
+    return 'You must be at least 18 years old to join HeartConnect.'
+  }
+  if (normalised.includes('rate limit') || normalised.includes('too many')) {
+    return 'Too many attempts right now. Wait a minute and try again.'
+  }
+  return message
+}
+
 export function SignUpPage() {
   const navigate = useNavigate()
   const { signUp } = useAuth()
@@ -45,6 +73,7 @@ export function SignUpPage() {
     defaultValues: {
       interestedIn: [],
       termsAccepted: false,
+      ageConfirmed: false,
     },
   })
 
@@ -54,7 +83,7 @@ export function SignUpPage() {
     setIsSubmitting(true)
     setServerError('')
 
-    const { error } = await signUp({
+    const { error, requiresEmailVerification } = await signUp({
       email: data.email,
       password: data.password,
       fullName: data.fullName,
@@ -68,7 +97,14 @@ export function SignUpPage() {
     setIsSubmitting(false)
 
     if (error) {
-      setServerError(error.message)
+      setServerError(friendlySignUpError(error.message))
+      return
+    }
+
+    // With email confirmation on, GoTrue issues no session: the account exists
+    // but nothing is signed in until the link in the inbox is followed.
+    if (requiresEmailVerification) {
+      navigate(`/auth/verify-email?email=${encodeURIComponent(data.email)}`, { replace: true })
       return
     }
 
@@ -153,6 +189,7 @@ export function SignUpPage() {
               {errors.password.message}
             </p>
           )}
+          <PasswordStrengthMeter password={password} />
           <ul id="password-requirements" className="mt-2 space-y-1" aria-live="polite">
             {PASSWORD_REQUIREMENTS.map((req) => {
               const met = req.test(password)
@@ -285,38 +322,59 @@ export function SignUpPage() {
         </fieldset>
       </div>
 
-      {/* Terms */}
-      <div className="pt-6 border-t border-dark-800">
-        <label className="flex items-start gap-3 p-4 bg-dark-900 border rounded-xl cursor-pointer transition-all hover:border-dark-700">
-          <input
-            type="checkbox"
-            className="w-4 h-4 mt-0.5 rounded border-dark-600 bg-dark-800 text-primary-600 focus:ring-primary-500 focus:ring-2"
-            {...register('termsAccepted')}
+      {/* Consent — two separate agreements, never folded into one */}
+      <div className="pt-6 border-t border-dark-800 space-y-3">
+        <div className="p-4 bg-dark-900 border rounded-xl space-y-3">
+          <Checkbox
+            label="I am 18 or older"
+            description="HeartConnect is an adults-only service. You must be at least 18 years old to join."
+            aria-invalid={errors.ageConfirmed ? 'true' : undefined}
+            aria-describedby={errors.ageConfirmed ? 'age-confirm-error' : undefined}
+            {...register('ageConfirmed')}
+          />
+          {errors.ageConfirmed && (
+            <p id="age-confirm-error" className="text-sm text-red-400" role="alert">
+              {errors.ageConfirmed.message}
+            </p>
+          )}
+
+          <Checkbox
+            label="I accept the Terms and Privacy Policy"
+            description="We will never sell your data or phone number."
             aria-invalid={errors.termsAccepted ? 'true' : undefined}
             aria-describedby={errors.termsAccepted ? 'terms-error' : undefined}
+            {...register('termsAccepted')}
           />
-          <span className="text-sm text-dark-300">
-            I agree to the{' '}
-            <Link to="/terms" className="text-primary-400 hover:text-primary-300 underline">
-              Terms of Service
-            </Link>{' '}
-            and{' '}
-            <Link to="/privacy" className="text-primary-400 hover:text-primary-300 underline">
-              Privacy Policy
-            </Link>
-            , and I confirm I am 18 years or older.
-          </span>
-        </label>
-        {errors.termsAccepted && (
-          <p id="terms-error" className="mt-2 text-sm text-red-400" role="alert">
-            {errors.termsAccepted.message}
-          </p>
-        )}
+          {errors.termsAccepted && (
+            <p id="terms-error" className="text-sm text-red-400" role="alert">
+              {errors.termsAccepted.message}
+            </p>
+          )}
+        </div>
+        <p className="text-xs text-dark-500 text-center">
+          By creating an account you agree to our{' '}
+          <Link to="/terms" className="text-primary-400 hover:text-primary-300 underline">
+            Terms of Service
+          </Link>{' '}
+          and{' '}
+          <Link to="/privacy" className="text-primary-400 hover:text-primary-300 underline">
+            Privacy Policy
+          </Link>
+          .
+        </p>
       </div>
 
       <Button type="submit" className="w-full" size="lg" loading={isSubmitting}>
         {isSubmitting ? 'Creating account…' : 'Create account'}
       </Button>
+
+      <div className="flex items-center gap-3" aria-hidden="true">
+        <span className="h-px flex-1 bg-dark-800" />
+        <span className="text-xs text-dark-500">or</span>
+        <span className="h-px flex-1 bg-dark-800" />
+      </div>
+
+      <GoogleButton />
 
       <p className="text-center text-dark-500 text-sm">
         Already have an account?{' '}

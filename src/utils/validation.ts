@@ -6,7 +6,7 @@ import { z } from 'zod'
  * array, so the UI can never drift from what is actually enforced.
  */
 export const PASSWORD_REQUIREMENTS = [
-  { id: 'length', label: 'At least 8 characters', test: (p: string) => p.length >= 8 },
+  { id: 'length', label: 'At least 10 characters', test: (p: string) => p.length >= 10 },
   { id: 'uppercase', label: 'One uppercase letter', test: (p: string) => /[A-Z]/.test(p) },
   { id: 'lowercase', label: 'One lowercase letter', test: (p: string) => /[a-z]/.test(p) },
   { id: 'number', label: 'One number', test: (p: string) => /[0-9]/.test(p) },
@@ -15,16 +15,40 @@ export const PASSWORD_REQUIREMENTS = [
 
 export const passwordSchema = z
   .string()
-  .min(8, 'Password must be at least 8 characters')
+  .min(10, 'Password must be at least 10 characters')
   .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
   .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
   .regex(/[0-9]/, 'Password must contain at least one number')
   .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character')
 
+export type PasswordStrength = 'empty' | 'weak' | 'fair' | 'good' | 'strong'
+
+/**
+ * A five-point strength reading for the sign-up meter.
+ *
+ * Scores the four character-class rules on top of the length floor: longer
+ * passwords are not just "met", they are rewarded, because a rule list that
+ * treats `Valid1!pass` and `Valid1!pass-With-Numbers` as equal teaches users
+ * the wrong lesson about what makes a password hard to guess.
+ */
+export function passwordStrength(password: string): PasswordStrength {
+  if (password.length === 0) return 'empty'
+
+  const metClasses = PASSWORD_REQUIREMENTS.slice(1).filter((rule) => rule.test(password)).length
+  const lengthBonus = password.length >= 12 ? 2 : password.length >= 10 ? 1 : 0
+  const score = metClasses + lengthBonus
+
+  if (score <= 1) return 'weak'
+  if (score <= 3) return 'fair'
+  if (score <= 5) return 'good'
+  return 'strong'
+}
+
 /** HeartConnect is 18+. The same floor is re-checked by a database CHECK. */
 export const MINIMUM_AGE = 18
 
-export const UNDERAGE_MESSAGE = `You must be at least ${MINIMUM_AGE} years old`
+/** Kept as a sentence so the friendly phrasing does not strip the requirement. */
+export const UNDERAGE_MESSAGE = 'You must be at least 18 years old to join HeartConnect'
 
 export function ageFromDateOfBirth(dateOfBirth: string, today = new Date()): number {
   const birth = new Date(dateOfBirth)
@@ -70,6 +94,13 @@ export const signUpSchema = z.object({
   // `boolean` + refine keeps the form's default value typeable while still
   // refusing anything other than an explicit tick.
   termsAccepted: z.boolean().refine((accepted) => accepted, 'You must accept the terms and conditions'),
+  // Separate from `termsAccepted` on purpose: "I am an adult" is a fact the
+  // account claims ahead of the database CHECK on `date_of_birth`, whereas the
+  // terms tick is a legal agreement. Confusing the two means a refusal of one
+  // reads as a refusal of the other.
+  ageConfirmed: z
+    .boolean()
+    .refine((confirmed) => confirmed, 'You must confirm that you are 18 or older'),
 }).refine((data) => data.password === data.confirmPassword, {
   message: 'Passwords do not match',
   path: ['confirmPassword'],

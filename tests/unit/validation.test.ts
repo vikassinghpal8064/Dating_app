@@ -9,6 +9,7 @@ import {
   latestDateOfBirth,
   messageSchema,
   passwordSchema,
+  passwordStrength,
   photoUrlSchema,
   preferencesSchema,
   profileSchema,
@@ -31,6 +32,7 @@ const validSignUp = {
   locationCity: 'Leeds',
   locationCountry: 'United Kingdom',
   termsAccepted: true,
+  ageConfirmed: true,
 }
 
 const validProfile = {
@@ -71,6 +73,21 @@ describe('Password policy', () => {
       expect(rule.label).toBeTruthy()
       expect(typeof rule.test).toBe('function')
     }
+  })
+
+  it('enforces the 10-character floor stated in the checklist', () => {
+    // 8 characters satisfies the old policy and must now fail.
+    expect(passwordSchema.safeParse('Short8!x').success).toBe(false)
+    // Exactly 10 characters, all classes present: the new floor, accepted.
+    expect(passwordSchema.safeParse('Exactly10!x').success).toBe(true)
+    expect(PASSWORD_REQUIREMENTS[0]?.label).toBe('At least 10 characters')
+  })
+
+  it('rates strength from the floor upward, not just pass/fail', () => {
+    expect(passwordStrength('')).toBe('empty')
+    expect(passwordStrength('short')).toBe('weak')
+    expect(passwordStrength('Valid1!pass')).toBe('good')
+    expect(passwordStrength('Valid1!pass-Longer')).toBe('strong')
   })
 })
 
@@ -130,6 +147,19 @@ describe('signUpSchema', () => {
   it('requires the terms to be accepted, not merely truthy', () => {
     expect(signUpSchema.safeParse({ ...validSignUp, termsAccepted: false }).success).toBe(false)
     expect(signUpSchema.safeParse({ ...validSignUp, termsAccepted: undefined }).success).toBe(false)
+  })
+
+  it('requires an explicit declaration that the member is 18 or older', () => {
+    expect(signUpSchema.safeParse({ ...validSignUp, ageConfirmed: false }).success).toBe(false)
+    expect(signUpSchema.safeParse({ ...validSignUp, ageConfirmed: undefined }).success).toBe(false)
+  })
+
+  it('treats the age confirmation and the terms as separate agreements', () => {
+    // Tricking one checkbox must not satisfy the other.
+    const termsOnly = signUpSchema.safeParse({ ...validSignUp, termsAccepted: true, ageConfirmed: false })
+    const ageOnly = signUpSchema.safeParse({ ...validSignUp, termsAccepted: false, ageConfirmed: true })
+    expect(termsOnly.success).toBe(false)
+    expect(ageOnly.success).toBe(false)
   })
 
   it('requires at least one interest', () => {

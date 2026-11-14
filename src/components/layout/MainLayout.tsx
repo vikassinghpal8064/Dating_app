@@ -2,6 +2,8 @@ import { Suspense } from 'react'
 import { NavLink, Link, Outlet } from 'react-router-dom'
 import { Heart, MessageSquare, Compass, User, Settings, LogOut } from 'lucide-react'
 import { useAuth } from '../../lib/authContext'
+import { useUnreadStats } from '../../hooks/useUnreadStats'
+import { usePendingContactRequestCount } from '../../hooks/useContactRequests'
 import { cn } from '../../utils'
 import { BottomNav, Button, PageSpinner } from '../ui'
 
@@ -20,6 +22,13 @@ const navItems = [
  */
 export function MainLayout() {
   const { user, signOut } = useAuth()
+  const unread = useUnreadStats()
+  const likesBadge = unread.data?.newLikes ?? 0
+  const messagesBadge = unread.data?.unreadMessages ?? 0
+
+  // Unanswered WhatsApp-number requests light a dot on the settings gear.
+  const pendingRequests = usePendingContactRequestCount()
+  const pendingRequestsCount = pendingRequests.data ?? 0
 
   return (
     <div className="min-h-screen bg-dark-950 flex flex-col pb-20 lg:pb-0">
@@ -47,7 +56,11 @@ export function MainLayout() {
             </NavLink>
 
             <nav className="hidden lg:flex items-center gap-1" aria-label="Main navigation">
-              {navItems.map(({ path, label, icon: Icon }) => (
+              {navItems.map(({ path, label, icon: Icon }) => {
+                const count =
+                  path === '/app/matches' ? messagesBadge : path === '/app/likes' ? likesBadge : 0
+                const shown = count > 99 ? '99+' : String(count)
+                return (
                 <NavLink
                   key={path}
                   to={path}
@@ -62,8 +75,17 @@ export function MainLayout() {
                 >
                   <Icon className="w-4 h-4" aria-hidden="true" />
                   {label}
+                  {count > 0 && (
+                    <span
+                      className="min-w-[18px] rounded-full bg-primary-600 px-1.5 py-0.5 text-center text-[10px] font-bold leading-none text-white"
+                      aria-label={path === '/app/matches' ? `${count} unread messages` : `${count} new likes`}
+                    >
+                      {shown}
+                    </span>
+                  )}
                 </NavLink>
-              ))}
+                )
+              })}
             </nav>
 
             <div className="flex items-center gap-2">
@@ -71,15 +93,25 @@ export function MainLayout() {
                 to="/app/settings"
                 className={({ isActive }) =>
                   cn(
-                    'p-2 rounded-xl transition-colors',
+                    'relative p-2 rounded-xl transition-colors',
                     isActive
                       ? 'bg-primary-600/20 text-primary-400'
                       : 'text-dark-400 hover:text-dark-100 hover:bg-dark-800'
                   )
                 }
-                aria-label="Settings"
+                aria-label={
+                  pendingRequestsCount > 0
+                    ? `Settings, ${pendingRequestsCount} unanswered WhatsApp request${pendingRequestsCount === 1 ? '' : 's'}`
+                    : 'Settings'
+                }
               >
                 <Settings className="w-5 h-5" aria-hidden="true" />
+                {pendingRequestsCount > 0 && (
+                  <span
+                    className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-primary-500 shadow-glow"
+                    aria-hidden="true"
+                  />
+                )}
               </NavLink>
               {user && (
                 <Button
@@ -129,7 +161,7 @@ export function MainLayout() {
         </div>
       </footer>
 
-      <BottomNav />
+      <BottomNav likesBadge={likesBadge} messagesBadge={messagesBadge} />
     </div>
   )
 }

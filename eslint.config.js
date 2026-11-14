@@ -20,6 +20,12 @@ export default [
   ...typescriptEslint.configs.recommended,
 
   {
+    // Local-only tooling (git-ignored): Node scripts, not browser code.
+    files: ['local-seed/**/*.{js,mjs}'],
+    languageOptions: { globals: globals.node },
+  },
+
+  {
     files: ['**/*.{js,jsx,ts,tsx}'],
     languageOptions: {
       ecmaVersion: 'latest',

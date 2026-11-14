@@ -1,6 +1,6 @@
 -- 06 — Server-managed fields.
 --
--- Thirty-three columns on `profiles`. Twenty-three of them describe a member
+-- Thirty-four columns on `profiles`. Twenty-four of them describe a member
 -- and are theirs to write. Ten are not, and the ten are the whole reason this
 -- file exists:
 --
@@ -13,7 +13,7 @@
 --
 -- Row level security cannot express any of this. A policy is row-scoped and
 -- these rules are column-scoped, so the enforcement is a narrow column grant:
--- `authenticated` holds `rd` on the table and `aw` on exactly the twenty-three
+-- `authenticated` holds `rd` on the table and `aw` on exactly the twenty-four
 -- editable columns. Naming any other column is refused by Postgres with 42501.
 -- A BEFORE trigger pins the same values for the writes that arrive as the table
 -- owner, which the column grant cannot see.
@@ -35,7 +35,7 @@ select plan(45);
 -- ---------------------------------------------------------------------------
 -- The boundary itself, asserted before any behaviour. A behavioural test that
 -- passes because a column happens not to exist proves nothing, so the grant set
--- is pinned explicitly: these twenty-three, and nothing else.
+-- is pinned explicitly: these twenty-four, and nothing else.
 -- ---------------------------------------------------------------------------
 select is(
   (select array_agg(distinct column_name::text order by column_name::text)
@@ -46,9 +46,9 @@ select is(
   array['bio', 'date_of_birth', 'drinking', 'education', 'exercise', 'full_name',
         'gender', 'height_cm', 'id', 'interested_in', 'interests', 'languages',
         'latitude', 'location_city', 'location_country', 'location_state',
-        'longitude', 'looking_for', 'occupation', 'photos', 'show_distance',
-        'smoking', 'whatsapp_consent']::text[],
-  'authenticated may write exactly the twenty-three editable columns'
+        'longitude', 'looking_for', 'occupation', 'photos', 'profile_paused',
+        'show_distance', 'smoking', 'whatsapp_consent']::text[],
+  'authenticated may write exactly the twenty-four editable columns'
 );
 
 select is(
@@ -56,8 +56,8 @@ select is(
     where table_schema = 'public' and table_name = 'profiles'
       and grantee = 'authenticated'
       and privilege_type in ('INSERT', 'UPDATE')),
-  46::bigint,
-  'and nothing else — 23 columns, once for INSERT and once for UPDATE'
+  47::bigint,
+  'and nothing else — 24 columns: 23 with INSERT and UPDATE, profile_paused with UPDATE only'
 );
 
 select ok(

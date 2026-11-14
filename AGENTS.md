@@ -41,3 +41,35 @@ npm run build       # succeeds
 - Free-tier services only (Supabase free tier, Vercel free tier).
 - Visual standard: **premium red-and-black**, consistent spacing, no placeholder/"DRAFT"/lorem-ipsum copy shipped as if it were a finished feature.
 - Accessibility: keyboard navigable, labelled controls, visible focus, AA contrast.
+
+## WORKING RULES (speed and quality)
+1. SCOPE: Do only what the current prompt says. No refactors, no new dependencies, no
+renaming, no extra pages, no 'nice to have' features. If you notice something unrelated, add
+one line to NOTES.md and move on.
+2. NO WANDERING: Do not re-read the whole repo. Read only the files named in the prompt plus
+files you must import from. Use grep to find things. Never list or open node_modules, dist, or
+lockfiles.
+3. BATCH WORK: Create or edit several files per step instead of one at a time. Write complete
+files rather than many tiny edits.
+4. TARGETED CHECKS (per prompt), in this order:
+ a) `npx tsc --noEmit` (must be clean).
+ b) `npx eslint <only the files you created or changed>` (must be clean).
+ c) `npx vitest run <only the new unit test files>`.
+ d) `npx playwright test <only the new e2e spec> --project=chromium --reporter=line`.
+ e) One screenshot of each NEW page at 375px width, and look at it.
+ Run the full lint, full test suite and full build ONLY when a prompt says 'FINAL CHECK'.
+5. ONE DEV SERVER: start `npm run dev` once in the background and reuse it. Never start a
+second one. Use Playwright webServer reuseExistingServer.
+6. LOOP GUARD: If the same error or test failure survives 3 fix attempts, STOP. Report: the
+exact error, the 3 things you tried, your best guess at the root cause, and which file to look
+at. Do not keep retrying. Do not weaken, skip, or delete the test to get past it.
+7. TIME GUARD: If you pass roughly 40 tool calls on one prompt without finishing, STOP and
+report what is done and what remains.
+8. DO NOT ASK QUESTIONS you can answer yourself. Pick the safest, most private option, write
+the assumption in one line in NOTES.md, and continue. Ask me only for real blockers (logins,
+keys, DNS).
+9. DATABASE CHANGES: never edit an old migration. Add a new timestamped file in
+supabase/migrations, run `npx supabase db reset` once, and re-run only the security tests.
+10. HONEST REPORTS: end every task with (a) files created or changed, (b) the raw output of
+the checks you ran, (c) anything not done. Never write 'all passing' unless you saw the
+output. Then STOP and wait for my next prompt.

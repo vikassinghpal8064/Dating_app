@@ -22,6 +22,10 @@ const VerifyEmailPage = lazyPage(
   () => import('../pages/auth/VerifyEmailPage'),
   'VerifyEmailPage'
 )
+const AuthCallbackPage = lazyPage(
+  () => import('../pages/auth/AuthCallbackPage'),
+  'AuthCallbackPage'
+)
 
 const AboutPage = lazyPage(() => import('../pages/public/AboutPage'), 'AboutPage')
 const SafetyPage = lazyPage(() => import('../pages/public/SafetyPage'), 'SafetyPage')
@@ -43,6 +47,8 @@ const LikesPage = lazyPage(() => import('../pages/app/LikesPage'), 'LikesPage')
 const MePage = lazyPage(() => import('../pages/app/MePage'), 'MePage')
 const EditProfilePage = lazyPage(() => import('../pages/app/EditProfilePage'), 'EditProfilePage')
 const SettingsPage = lazyPage(() => import('../pages/app/SettingsPage'), 'SettingsPage')
+const BlockedUsersPage = lazyPage(() => import('../pages/settings/BlockedUsers'), 'BlockedUsersPage')
+const VerifyProfilePage = lazyPage(() => import('../pages/app/VerifyProfilePage'), 'VerifyProfilePage')
 
 const AdminPage = lazyPage(() => import('../pages/admin/AdminPage'), 'AdminPage')
 const NotFoundPage = lazyPage(() => import('../pages/NotFoundPage'), 'NotFoundPage')
@@ -90,6 +96,12 @@ export const router = createBrowserRouter([
     children: [{ index: true, element: <VerifyEmailPage /> }],
   },
   {
+    path: '/auth/callback',
+    element: <AuthLayout />,
+    errorElement: <RouteErrorPage />,
+    children: [{ index: true, element: <AuthCallbackPage /> }],
+  },
+  {
     path: '/auth/reset-password',
     element: <AuthLayout />,
     errorElement: <RouteErrorPage />,
@@ -120,7 +132,9 @@ export const router = createBrowserRouter([
         { path: 'likes', element: <LikesPage /> },
         { path: 'me', element: <MePage /> },
         { path: 'me/edit', element: <EditProfilePage /> },
+        { path: 'verify', element: <VerifyProfilePage /> },
         { path: 'settings', element: <SettingsPage /> },
+        { path: 'settings/blocked', element: <BlockedUsersPage /> },
         { path: 'profile/:id', element: <ProfilePage /> },
       ] },
     ],

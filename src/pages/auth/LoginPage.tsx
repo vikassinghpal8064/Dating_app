@@ -1,10 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { AlertCircle, Eye, EyeOff } from 'lucide-react'
-import { Button, Input, Label } from '../../components/ui'
+import { Button, GoogleButton, Input, Label } from '../../components/ui'
 import { signInSchema, type SignInInput } from '../../utils/validation'
+import {
+  MAX_FAILED_ATTEMPTS,
+  readThrottle,
+  registerFailedLogin,
+  registerSuccessfulLogin,
+} from '../../utils/loginThrottle'
 import { useAuth } from '../../lib/authContext'
 import { cn } from '../../utils'
 
@@ -35,6 +41,12 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [serverError, setServerError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null)
+  /** Seconds until the client-side lockout lifts; 0 means not locked. */
+  const [lockRemaining, setLockRemaining] = useState(0)
+  const lockTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const isLocked = lockRemaining > 0
 
   const {
     register,
@@ -44,18 +56,69 @@ export function LoginPage() {
     resolver: zodResolver(signInSchema),
   })
 
+  // Re-apply an active lockout after a refresh: sessionStorage is per-tab, so
+  // the count survives reloads without touching localStorage.
+  useEffect(() => {
+    const initial = readThrottle()
+    if (initial.locked) setLockRemaining(Math.ceil(initial.remainingMs / 1000))
+    return () => {
+      if (lockTimer.current) clearInterval(lockTimer.current)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isLocked) {
+      if (lockTimer.current) {
+        clearInterval(lockTimer.current)
+        lockTimer.current = null
+      }
+      return
+    }
+
+    lockTimer.current = setInterval(() => {
+      setLockRemaining((prev) => {
+        if (prev <= 1) {
+          if (lockTimer.current) clearInterval(lockTimer.current)
+          lockTimer.current = null
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+
+    return () => {
+      if (lockTimer.current) clearInterval(lockTimer.current)
+      lockTimer.current = null
+    }
+  }, [isLocked])
+
   const onSubmit = async (data: SignInInput) => {
+    if (isLocked) return
+
     setIsSubmitting(true)
     setServerError('')
+    setUnverifiedEmail(null)
 
     const { error } = await signIn(data.email, data.password)
 
-    setIsSubmitting(false)
-
     if (error) {
-      setServerError(friendlyAuthError(error.message))
+      setIsSubmitting(false)
+
+      // Client-side throttle, *on top of* Supabase's own rate limiting.
+      const next = registerFailedLogin()
+      if (next.locked) setLockRemaining(Math.ceil(next.remainingMs / 1000))
+
+      const message = friendlyAuthError(error.message)
+      setServerError(message)
+
+      if (/email not confirmed/i.test(error.message)) {
+        setUnverifiedEmail(data.email)
+      }
       return
     }
+
+    setIsSubmitting(false)
+    registerSuccessfulLogin()
 
     // `ProtectedRoute` records where the visitor was heading before bouncing
     // them here. Only same-origin absolute paths are honoured, so a crafted
@@ -82,6 +145,29 @@ export function LoginPage() {
         </div>
       )}
 
+      {unverifiedEmail && (
+        <p className="text-sm">
+          <Link
+            to={`/auth/verify-email?email=${encodeURIComponent(unverifiedEmail)}`}
+            className="text-primary-400 hover:text-primary-300 underline"
+          >
+            Resend the verification email
+          </Link>
+        </p>
+      )}
+
+      {isLocked && (
+        <div
+          className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm animate-fade-in"
+          role="alert"
+        >
+          <AlertCircle className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+          <span>
+            Too many failed attempts. Try again in {lockRemaining}s.
+          </span>
+        </div>
+      )}
+
       <div className="space-y-4">
         <Input
           label="Email"
@@ -91,6 +177,7 @@ export function LoginPage() {
           {...register('email')}
           required
           autoComplete="email"
+          disabled={isLocked}
         />
 
         <div>
@@ -112,11 +199,13 @@ export function LoginPage() {
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:border-transparent',
                 errors.password
                   ? 'border-red-500 focus-visible:ring-red-500'
-                  : 'border-dark-700 hover:border-dark-600'
+                  : 'border-dark-700 hover:border-dark-600',
+                isLocked && 'disabled:opacity-50 disabled:cursor-not-allowed'
               )}
               placeholder="Enter your password"
               {...register('password')}
               required
+              disabled={isLocked}
               aria-invalid={errors.password ? 'true' : undefined}
               autoComplete="current-password"
             />
@@ -142,15 +231,26 @@ export function LoginPage() {
         </div>
       </div>
 
-      <Button type="submit" className="w-full" size="lg" loading={isSubmitting}>
+      <Button type="submit" className="w-full" size="lg" loading={isSubmitting} disabled={isLocked}>
         {isSubmitting ? 'Signing in…' : 'Sign in'}
       </Button>
+
+      <div className="flex items-center gap-3" aria-hidden="true">
+        <span className="h-px flex-1 bg-dark-800" />
+        <span className="text-xs text-dark-500">or</span>
+        <span className="h-px flex-1 bg-dark-800" />
+      </div>
+
+      <GoogleButton />
 
       <p className="text-center text-dark-500 text-sm">
         New here?{' '}
         <Link to="/auth/signup" className="text-primary-400 hover:text-primary-300 font-medium underline">
           Create a free account
         </Link>
+      </p>
+      <p className="text-center text-dark-600 text-xs">
+        {`After ${MAX_FAILED_ATTEMPTS} failed attempts, sign-in pauses for 30 seconds.`}
       </p>
     </form>
   )

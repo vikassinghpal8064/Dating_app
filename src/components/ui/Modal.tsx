@@ -69,7 +69,11 @@ export function Modal({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-        onClick={closeOnOverlayClick ? onClose : undefined}
+        onClick={(event) => {
+          // Only the backdrop itself closes the dialog — clicks on its content
+          // (buttons, inputs) must not bubble up into `onClose`.
+          if (closeOnOverlayClick && event.target === event.currentTarget) onClose()
+        }}
         role="presentation"
       >
         <motion.div

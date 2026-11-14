@@ -2,28 +2,12 @@ import { useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/authContext'
 import { useAsyncData } from './useAsyncData'
+import { toPublicProfile } from '../utils/publicProfile'
+import { mergeApprovedMemberPhotos } from '../utils/memberPhotoDisplay'
 import type { PublicProfile } from '../types'
 import type { Database } from '../types/database'
 
 type PublicProfileRow = Database['public']['Views']['public_profiles']['Row']
-
-/** Narrows the view row to the shape the UI consumes. */
-function toPublicProfile(row: PublicProfileRow): PublicProfile {
-  return {
-    id: row.id,
-    full_name: row.full_name,
-    age: row.age,
-    gender: row.gender,
-    interested_in: row.interested_in ?? [],
-    bio: row.bio ?? '',
-    photos: row.photos ?? [],
-    location_city: row.location_city,
-    location_country: row.location_country,
-    distance_km: row.distance_km,
-    is_online: row.is_online,
-    last_active: row.last_active,
-  }
-}
 
 /**
  * Candidate profiles for the signed-in user.
@@ -46,8 +30,9 @@ export function useDiscoverProfiles(limit = 20) {
 
     if (error) return { data: null, error: error.message }
 
+    const profiles = ((data ?? []) as PublicProfileRow[]).map(toPublicProfile)
     return {
-      data: ((data ?? []) as PublicProfileRow[]).map(toPublicProfile),
+      data: await mergeApprovedMemberPhotos(profiles),
       error: null,
     }
   }, [user, limit])
@@ -69,7 +54,8 @@ export function useProfile(profileId: string | undefined) {
     if (error) return { data: null, error: error.message }
     if (!data) return { data: null, error: 'That profile could not be found.' }
 
-    return { data: toPublicProfile(data as PublicProfileRow), error: null }
+    const [profile] = await mergeApprovedMemberPhotos([toPublicProfile(data as PublicProfileRow)])
+    return { data: profile ?? null, error: null }
   }, [profileId])
 
   return useAsyncData<PublicProfile>(load)

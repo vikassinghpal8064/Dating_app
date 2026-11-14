@@ -293,11 +293,42 @@ language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
+declare
+  -- The sign-up form sends what it collects as GoTrue user metadata, because
+  -- with email confirmation on there is no session yet and a member cannot
+  -- write their own profile row. Hydrated here, server-side, before GoTrue
+  -- even returns. The `prepare_profile_write` trigger then re-checks the age
+  -- and derives visibility on the row exactly as it would for any other write.
+  meta jsonb := coalesce(new.raw_user_meta_data, '{}'::jsonb);
 begin
   perform set_config('app.server_write', 'on', true);
 
-  insert into public.profiles (id, email)
-  values (new.id, new.email)
+  insert into public.profiles (
+    id, email, full_name, date_of_birth, gender, interested_in,
+    location_city, location_country
+  )
+  values (
+    new.id, new.email,
+    nullif(btrim(meta->>'full_name'), ''),
+    case
+      when meta->>'date_of_birth' is null or meta->>'date_of_birth' = '' then null
+      else (meta->>'date_of_birth')::date
+    end,
+    case
+      when meta->>'gender' is not null then (meta->>'gender')::public.gender
+      else 'prefer_not_to_say'::public.gender
+    end,
+    case
+      when jsonb_typeof(meta->'interested_in') = 'array'
+      then (
+        select coalesce(array_agg(v.value::public.interested_in order by v.ord), '{}'::public.interested_in[])
+        from jsonb_array_elements_text(meta->'interested_in') with ordinality as v(value, ord)
+      )
+      else '{}'::public.interested_in[]
+    end,
+    nullif(btrim(meta->>'location_city'), ''),
+    nullif(btrim(meta->>'location_country'), '')
+  )
   on conflict (id) do nothing;
 
   insert into public.user_preferences (user_id)
@@ -310,9 +341,11 @@ end;
 $$;
 
 comment on function public.handle_new_user() is
-  'Creates the empty profile and default preferences row for every new auth
-  user. The sign-up form fills the profile in afterwards, so the columns it
-  cannot know yet (name, birth date, city) are nullable.';
+  'Creates the profile and default preferences row for every new auth user,
+  hydrating what the sign-up form collected as GoTrue user metadata. Columns
+  the form cannot know or that are left for onboarding (bio, interests,
+  photos) keep their defaults, so a fresh member is deliberately incomplete
+  and the app routes them to the finishing screens.';
 
 create trigger on_auth_user_created
   after insert on auth.users

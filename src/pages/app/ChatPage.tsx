@@ -1,20 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Lock, Send } from 'lucide-react'
-import {
-  Avatar,
-  Button,
-  InlineMessage,
-  Label,
-  PageContainer,
-  QueryState,
-  Textarea,
-} from '../../components/ui'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../../lib/authContext'
-import { sendMessage, useMatches, useMessages } from '../../hooks/useMatches'
-import { messageSchema } from '../../utils/validation'
-import { formatRelativeTime } from '../../utils'
+import { useMatches } from '../../hooks/useMatches'
+import { useMessages, markMessagesRead } from '../../hooks/useMessages'
+import { usePresence } from '../../hooks/usePresence'
+import { MessageBubble } from '../../components/chat/MessageBubble'
+import { ChatInput } from '../../components/chat/ChatInput'
+import { ChatHeader } from '../../components/chat/ChatHeader'
+import { SafetyBanner } from '../../components/chat/SafetyBanner'
+import { ScamWarning } from '../../components/safety/ScamWarning'
+import { flagSuspiciousMessage } from '../../lib/safety'
+import { Button, InlineMessage, PageContainer, QueryState } from '../../components/ui'
+import { unmatchMember } from '../../hooks/useMatches'
+import type { Message } from '../../types'
 
 export function ChatPage() {
   const { matchId } = useParams<{ matchId: string }>()
@@ -22,49 +20,87 @@ export function ChatPage() {
   const { user } = useAuth()
 
   const matches = useMatches()
-  const thread = useMessages(matchId)
+  const {
+    messages,
+    loading,
+    error: messagesError,
+    hasMore,
+    loadMore,
+    sendMessage,
+  } = useMessages(matchId)
 
-  const [draft, setDraft] = useState('')
-  const [sending, setSending] = useState(false)
-  const [error, setError] = useState('')
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const { isPartnerOnline, isPartnerTyping, setTyping } = usePresence(matchId)
+
+  const [sendError, setSendError] = useState('')
+  const [loadingMore, setLoadingMore] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const prevLengthRef = useRef(0)
 
   const match = (matches.data ?? []).find((entry) => entry.id === matchId)
   const person = match?.matched_user
-  const messages = thread.data ?? []
 
+  // Mark messages as read when thread opens or new messages arrive
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: 'end' })
+    if (!matchId || loading) return
+    const hasUnreadIncoming = messages.some(
+      (message) => message.sender_id !== user?.id && !message.read_at
+    )
+    if (!hasUnreadIncoming) return
+    void markMessagesRead(matchId)
+  }, [matchId, loading, messages, user?.id])
+
+  // Auto-scroll to bottom on new messages
+  useEffect(() => {
+    if (messages.length > prevLengthRef.current && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+    prevLengthRef.current = messages.length
   }, [messages.length])
 
-  async function handleSend(event: FormEvent) {
-    event.preventDefault()
-    setError('')
-
-    const parsed = messageSchema.safeParse({ content: draft })
-    if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? 'That message cannot be sent.')
-      return
-    }
-
+  const handleSend = async (content: string) => {
     if (!matchId) return
+    setSendError('')
 
-    setSending(true)
-    const { error: sendError } = await sendMessage(matchId, parsed.data.content.trim())
-    setSending(false)
-
-    if (sendError) {
-      setError(sendError)
-      return
+    const { error } = await sendMessage(content)
+    if (error) {
+      setSendError(error)
     }
-
-    setDraft('')
-    thread.reload()
   }
 
-  /* The conversation header needs the match, the thread needs the match id.
-     Waiting for both avoids flashing "Unknown person" on a slow network. */
-  if (matches.status === 'loading' || thread.status === 'loading' || matches.status === 'idle') {
+  const handleLoadMore = async () => {
+    if (loadingMore || !hasMore) return
+    setLoadingMore(true)
+    await loadMore()
+    setLoadingMore(false)
+  }
+
+  const handleUnmatch = async () => {
+    if (!matchId || !confirm('Are you sure you want to unmatch? This will delete the conversation for both of you.')) {
+      return
+    }
+    const { error } = await unmatchMember(matchId)
+    if (error) {
+      alert(error)
+    } else {
+      navigate('/app/messages')
+    }
+  }
+
+  const handleReport = () => {
+    alert('Report feature coming soon')
+  }
+
+  const handleBlock = async () => {
+    if (!matchId || !person) return
+    if (!confirm(`Block ${person.full_name}? You will no longer see each other.`)) {
+      return
+    }
+    // Block logic would go here (create block row)
+    alert('Block feature coming soon')
+  }
+
+  // Loading state
+  if (matches.status === 'loading' || loading) {
     return (
       <PageContainer variant="narrow">
         <QueryState status="loading" error={null} onRetry={() => {}} label="conversation" />
@@ -72,6 +108,7 @@ export function ChatPage() {
     )
   }
 
+  // Error state
   if (matches.status === 'error') {
     return (
       <PageContainer variant="narrow">
@@ -85,6 +122,7 @@ export function ChatPage() {
     )
   }
 
+  // Not found
   if (!match || !person) {
     return (
       <PageContainer variant="narrow">
@@ -101,110 +139,139 @@ export function ChatPage() {
     )
   }
 
+  // Group messages by day
+  const groupedMessages = groupMessagesByDay(messages)
+
   return (
-    <PageContainer variant="narrow">
-      <Link
-        to="/app/messages"
-        className="mb-4 inline-flex items-center gap-2 rounded-lg text-sm text-dark-400 transition-colors hover:text-dark-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+    <div className="flex h-full flex-col bg-dark-950">
+      <ChatHeader
+        matchId={matchId!}
+        partner={person}
+        isPartnerOnline={isPartnerOnline}
+        onUnmatch={handleUnmatch}
+        onReport={handleReport}
+        onBlock={handleBlock}
+      />
+
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto px-4 py-4"
+        aria-live="polite"
+        aria-label="Messages"
       >
-        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-        All messages
-      </Link>
+        {messagesError && (
+          <InlineMessage tone="error" className="mb-4">
+            {messagesError}
+          </InlineMessage>
+        )}
 
-      <div className="glass-strong overflow-hidden rounded-2xl">
-        <header className="flex items-center gap-3 border-b border-dark-700 p-4">
-          <Avatar
-            src={person.photos[0] ?? null}
-            fallback={person.full_name}
-            alt={`${person.full_name}’s profile photo`}
-            status={person.is_online ? 'online' : 'offline'}
-          />
-          <div className="min-w-0">
-            <h1 className="truncate font-display text-lg font-semibold text-dark-50">
-              {person.full_name}
-            </h1>
-            <p className="text-xs text-dark-400">
-              {person.is_online
-                ? 'Online now'
-                : `Active ${formatRelativeTime(person.last_active)}`}
-            </p>
+        {/* Safety banner for new conversations */}
+        {messages.length === 0 && (
+          <div className="mb-4">
+            <SafetyBanner />
           </div>
-        </header>
+        )}
 
-        <div
-          className="max-h-[60vh] space-y-3 overflow-y-auto p-4"
-          aria-live="polite"
-          aria-label="Messages"
-        >
-          {messages.length === 0 ? (
-            <p className="py-10 text-center text-sm text-dark-500">
-              No messages yet. Say hello.
-            </p>
-          ) : (
-            messages.map((message) => {
-              const isMine = message.sender_id === user?.id
-
-              return (
-                <div
-                  key={message.id}
-                  className={isMine ? 'flex justify-end' : 'flex justify-start'}
-                >
-                  <div
-                    className={[
-                      'max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed',
-                      isMine
-                        ? 'bg-primary-600 text-white'
-                        : 'bg-dark-800 text-dark-100',
-                    ].join(' ')}
-                  >
-                    {/* User text is rendered as a text node, never as HTML. */}
-                    <p className="whitespace-pre-wrap break-words">{message.content}</p>
-                    <p
-                      className={
-                        isMine
-                          ? 'mt-1 text-right text-[11px] text-primary-100/70'
-                          : 'mt-1 text-[11px] text-dark-500'
-                      }
-                    >
-                      {formatRelativeTime(message.created_at)}
-                    </p>
-                  </div>
-                </div>
-              )
-            })
-          )}
-          <div ref={bottomRef} />
-        </div>
-
-        <form onSubmit={handleSend} className="space-y-3 border-t border-dark-700 p-4" noValidate>
-          {error && <InlineMessage tone="error">{error}</InlineMessage>}
-
-          <Label htmlFor="message" className="sr-only">
-            Write a message
-          </Label>
-          <Textarea
-            id="message"
-            name="content"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder={`Message ${person.full_name}…`}
-            rows={2}
-            maxLength={2000}
-            required
-          />
-
-          <div className="flex items-center justify-between gap-3">
-            <p className="flex items-center gap-1.5 text-xs text-dark-500">
-              <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              Only you and {person.full_name} can read this
-            </p>
-            <Button type="submit" size="sm" loading={sending}>
-              {!sending && <Send className="h-4 w-4" aria-hidden="true" />}
-              Send
+        {/* Load more button */}
+        {hasMore && (
+          <div className="mb-4 flex justify-center">
+            <Button variant="outline" size="sm" onClick={handleLoadMore} loading={loadingMore}>
+              Load earlier messages
             </Button>
           </div>
-        </form>
+        )}
+
+        {/* Messages grouped by day */}
+        {groupedMessages.map(({ date, messages: dayMessages }) => (
+          <div key={date}>
+            <div className="my-4 flex items-center gap-4">
+              <div className="h-px flex-1 bg-dark-700" />
+              <span className="text-xs font-medium text-dark-500">{formatDayLabel(date)}</span>
+              <div className="h-px flex-1 bg-dark-700" />
+            </div>
+            <div className="space-y-3">
+              {dayMessages.map((message) => {
+                const isMine = message.sender_id === user?.id
+                const isScam = !isMine && flagSuspiciousMessage(message.content)
+
+                return (
+                  <div key={message.id} className="space-y-2">
+                    {isScam && <ScamWarning />}
+                    <MessageBubble
+                      message={message}
+                      isMine={isMine}
+                      showSeen
+                    />
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+
+        {/* Typing indicator */}
+        {isPartnerTyping && (
+          <div className="mt-3 flex justify-start">
+            <div className="rounded-2xl bg-dark-800 px-4 py-2.5">
+              <div className="flex gap-1">
+                <span className="h-2 w-2 animate-bounce rounded-full bg-dark-400" style={{ animationDelay: '0ms' }} />
+                <span className="h-2 w-2 animate-bounce rounded-full bg-dark-400" style={{ animationDelay: '150ms' }} />
+                <span className="h-2 w-2 animate-bounce rounded-full bg-dark-400" style={{ animationDelay: '300ms' }} />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Empty state */}
+        {messages.length === 0 && (
+          <p className="py-10 text-center text-sm text-dark-500">
+            No messages yet. Say hello!
+          </p>
+        )}
       </div>
-    </PageContainer>
+
+      {/* Send error */}
+      {sendError && (
+        <div className="px-4">
+          <InlineMessage tone="error">{sendError}</InlineMessage>
+        </div>
+      )}
+
+      <ChatInput onSend={handleSend} onTypingChange={setTyping} />
+    </div>
   )
+}
+
+interface MessageGroup {
+  date: string
+  messages: Message[]
+}
+
+function groupMessagesByDay(messages: Message[]): MessageGroup[] {
+  const groups: Map<string, Message[]> = new Map()
+
+  for (const message of messages) {
+    const date = new Date(message.created_at).toISOString().split('T')[0]
+    if (!groups.has(date)) {
+      groups.set(date, [])
+    }
+    groups.get(date)!.push(message)
+  }
+
+  return Array.from(groups.entries()).map(([date, messages]) => ({ date, messages }))
+}
+
+function formatDayLabel(isoDate: string): string {
+  const date = new Date(isoDate)
+  const today = new Date()
+  const yesterday = new Date(today)
+  yesterday.setDate(yesterday.getDate() - 1)
+
+  if (date.toDateString() === today.toDateString()) {
+    return 'Today'
+  } else if (date.toDateString() === yesterday.toDateString()) {
+    return 'Yesterday'
+  } else {
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
+  }
 }
